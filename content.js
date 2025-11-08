@@ -74,6 +74,11 @@ window.addEventListener('message', async (event) => {
 
 // 监听来自background的消息
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+  if (request.action === 'ping') {
+    sendResponse({ success: true });
+    return true;
+  }
+  
   if (request.action === 'scanFollowing') {
     console.log('开始扫描关注列表...');
     // 通知injected script开始扫描
