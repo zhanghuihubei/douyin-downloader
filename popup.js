@@ -83,14 +83,30 @@ async function updateStatus() {
       
       // 停止按钮：总是显示，但只在有下载或队列时启用
       const stopButton = document.getElementById('stopDownload');
+      const stopButtonContainer = document.getElementById('stopButtonContainer');
       const shouldEnableStopButton = status.isDownloading || status.queueLength > 0;
+      
       stopButton.disabled = !shouldEnableStopButton;
-      document.getElementById('stopButtonContainer').style.display = 'block';
+      stopButtonContainer.style.display = 'block';
+      
+      // 根据状态更新按钮文本
+      if (status.isDownloading) {
+        stopButton.innerHTML = '🛑 停止下载中...';
+        stopButton.className = 'btn btn-danger';
+      } else if (status.queueLength > 0) {
+        stopButton.innerHTML = '🛑 清空队列';
+        stopButton.className = 'btn btn-secondary';
+      } else {
+        stopButton.innerHTML = '🛑 停止下载';
+        stopButton.className = 'btn btn-secondary';
+      }
+      
       console.log('🔍 停止按钮状态:', {
         isDownloading: status.isDownloading,
         queueLength: status.queueLength,
         shouldEnableStopButton,
-        disabled: stopButton.disabled
+        disabled: stopButton.disabled,
+        buttonText: stopButton.innerHTML
       });
     }
   } catch (error) {
@@ -160,19 +176,31 @@ async function scanNow() {
 // 停止下载
 async function stopDownload() {
   try {
+    console.log('🛑 用户点击停止下载按钮');
     const response = await chrome.runtime.sendMessage({ action: 'stopDownload' });
     
     if (response.success) {
-      const message = response.clearedCount 
-        ? `已停止下载并清空队列，移除了 ${response.clearedCount} 个待下载视频`
-        : '已停止下载';
+      console.log('✅ 停止下载成功，响应:', response);
+      const message = response.message || (
+        response.clearedCount 
+          ? `已停止下载并清空队列，移除了 ${response.clearedCount} 个待下载视频`
+          : '已停止下载'
+      );
       showNotification('停止下载', message);
+      
+      // 立即更新状态，确保UI反映最新情况
       await updateStatus();
+      
+      // 再次更新状态，确保所有状态都正确
+      setTimeout(async () => {
+        await updateStatus();
+      }, 500);
     } else {
+      console.error('❌ 停止下载失败:', response.error);
       alert('停止失败: ' + response.error);
     }
   } catch (error) {
-    console.error('停止下载失败:', error);
+    console.error('❌ 停止下载异常:', error);
     alert('停止失败: ' + error.message);
   }
 }

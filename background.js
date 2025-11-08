@@ -254,6 +254,12 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
           }
           
           isDownloading = false;
+          
+          // 延迟重置stopDownload标志
+          setTimeout(() => {
+            stopDownload = false;
+            console.log('🔄 暂停自动下载时已重置停止下载标志');
+          }, 1000);
         }
       }
       sendResponse({ success: true, autoDownload: config.autoDownload });
@@ -413,17 +419,26 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         isDownloading,
         queueLength: downloadQueue.length
       });
+      
+      // 先记录当前状态，用于响应
+      const wasDownloading = isDownloading;
+      const clearedCount = downloadQueue.length;
+      
+      // 设置停止标志
       stopDownload = true;
       
       // 清空下载队列
-      const clearedCount = downloadQueue.length;
       downloadQueue = [];
       console.log(`🗑️ 已清空下载队列，移除了 ${clearedCount} 个待下载视频`);
       
       // 如果有正在进行的下载，尝试中断它
       if (currentDownloadController) {
         console.log('🛑 中断当前下载...');
-        currentDownloadController.abort();
+        try {
+          currentDownloadController.abort();
+        } catch (error) {
+          console.log('中断下载控制器时出错:', error.message);
+        }
         currentDownloadController = null;
       }
       
@@ -437,10 +452,24 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         }
       }
       
-      // 立即设置isDownloading为false，确保UI状态更新
+      // 设置isDownloading为false
       isDownloading = false;
+      
+      // 延迟重置stopDownload标志，给UI足够时间更新
+      setTimeout(() => {
+        stopDownload = false;
+        console.log('🔄 已重置停止下载标志');
+      }, 1000);
+      
       console.log('✅ 已停止下载并清空队列');
-      sendResponse({ success: true, clearedCount });
+      sendResponse({ 
+        success: true, 
+        clearedCount,
+        wasDownloading,
+        message: wasDownloading 
+          ? `已停止下载并清空队列，移除了 ${clearedCount} 个待下载视频`
+          : `已清空队列，移除了 ${clearedCount} 个待下载视频`
+      });
     })();
     return true;
   }
@@ -508,7 +537,7 @@ async function processQueue() {
     // 检查是否需要停止下载
     if (stopDownload) {
       console.log('🛑 收到停止下载指令，终止队列处理');
-      stopDownload = false; // 重置标志
+      // 不在这里重置stopDownload，让停止处理函数统一管理
       break;
     }
     
@@ -532,7 +561,7 @@ async function processQueue() {
     // 再次检查是否需要停止下载（在等待下一个下载之前）
     if (stopDownload) {
       console.log('🛑 收到停止下载指令，终止队列处理');
-      stopDownload = false; // 重置标志
+      // 不在这里重置stopDownload，让停止处理函数统一管理
       break;
     }
     
@@ -542,6 +571,12 @@ async function processQueue() {
       console.log('⏱️ 等待', (delay/1000).toFixed(1), '秒后继续下载...');
       await sleep(delay);
     }
+  }
+  
+  if (stopDownload) {
+    console.log('🛑 下载队列被用户中断');
+  } else {
+    console.log('✅ 下载队列自然完成');
   }
   
   console.log('=== 下载队列处理完成 ===');
@@ -559,7 +594,10 @@ async function downloadVideo(videoData) {
   // 在开始下载前检查是否需要停止
   if (stopDownload) {
     console.log('🛑 检测到停止标志，取消下载:', videoData.title);
-    throw new Error('Download stopped by user');
+    // 创建一个AbortError，这样上层能正确识别为中断
+    const error = new Error('Download stopped by user');
+    error.name = 'AbortError';
+    throw error;
   }
   
   // 创建新的下载控制器
