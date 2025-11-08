@@ -7,13 +7,15 @@
   
   // 全局变量存储当前的XMLHttpRequest，用于中断
   let currentXhr = null;
+  let currentDownloadId = null; // 跟踪当前下载的ID
+  let pendingAbortIds = new Set(); // 待中断的下载ID
   
   // 监听来自content script的消息
   window.addEventListener('message', async (event) => {
     if (event.source !== window) return;
     if (!event.data.type || event.data.type !== 'TO_DOUYIN_PAGE') return;
     
-    const { action, userId, videoUrl, filename, abortSignal } = event.data;
+    const { action, userId, videoUrl, filename, abortSignal, downloadId } = event.data;
     
     if (action === 'getFollowingList') {
       await getFollowingList();
@@ -26,12 +28,20 @@
     if (action === 'downloadVideo') {
       console.log('📥 Injected script收到下载请求:', filename);
       console.log('🚦 中断信号状态:', abortSignal || 'none');
-      await downloadVideoInPage(videoUrl, filename, abortSignal);
+      console.log('🆔 下载ID:', downloadId || 'none');
+      await downloadVideoInPage(videoUrl, filename, abortSignal, downloadId);
     }
     
     if (action === 'abortDownload') {
       console.log('🛑 Injected script收到中断下载请求');
       console.log('⏰ 中断时间戳:', event.data.timestamp || 'none');
+      console.log('🆔 当前下载ID:', currentDownloadId || 'none');
+      
+      // 记录待中断的ID（这样即使当前没有XHR，也能在后续处理中检查）
+      if (downloadId) {
+        pendingAbortIds.add(downloadId);
+        console.log('📍 添加待中断ID到集合');
+      }
       
       if (currentXhr) {
         try {
@@ -42,6 +52,7 @@
           console.warn('⚠️ 中断XMLHttpRequest时出错:', error.message);
         }
         currentXhr = null;
+        currentDownloadId = null;
       } else {
         console.log('ℹ️ 没有正在进行的下载需要中断');
       }
@@ -742,15 +753,34 @@
   }
   
   // 在真正的页面上下文中下载视频（没有CORS限制）
-  async function downloadVideoInPage(videoUrl, filename, abortSignal) {
+  async function downloadVideoInPage(videoUrl, filename, abortSignal, downloadId) {
     console.log('🔄 使用XMLHttpRequest下载（绕过fetch hook）...');
     console.log('🔗 URL:', videoUrl);
     console.log('🚦 中断信号:', abortSignal || 'none');
+    console.log('🆔 下载ID:', downloadId || 'none');
     
-    // 提前检查中断信号 - 如果一开始就是active，直接返回
+    // 设置当前下载ID
+    if (downloadId) {
+      currentDownloadId = downloadId;
+    }
+    
+    // 提早检查待中断ID集合中是否有这个ID
+    if (downloadId && pendingAbortIds.has(downloadId)) {
+      console.log('🛑 下载ID在待中断集合中，直接取消');
+      pendingAbortIds.delete(downloadId);
+      currentDownloadId = null;
+      const abortError = new Error('Download aborted');
+      abortError.name = 'AbortError';
+      throw abortError;
+    }
+    
+    // 提早检查中断信号 - 如果一开始就是active，直接返回
     if (abortSignal === 'active') {
       console.log('🛑 下载开始前就收到中断信号，直接取消');
-      return;
+      currentDownloadId = null;
+      const abortError = new Error('Download aborted');
+      abortError.name = 'AbortError';
+      throw abortError;
     }
     
     // 如果已经有正在进行的下载，先中断它
@@ -762,6 +792,7 @@
         console.warn('中断现有下载时出错:', error.message);
       }
       currentXhr = null;
+      currentDownloadId = null;
     }
     
     try {
@@ -779,6 +810,7 @@
         currentXhr.onabort = function() {
           console.log('🛑 XMLHttpRequest被中断');
           currentXhr = null;
+          currentDownloadId = null;
           // 使用特殊的错误类型来标识中断
           const abortError = new Error('Download aborted');
           abortError.name = 'AbortError';
@@ -793,6 +825,7 @@
           const contentLength = currentXhr ? currentXhr.getResponseHeader('Content-Length') : null;
           
           currentXhr = null;
+          currentDownloadId = null;
           
           if (status === 200 && response) {
             console.log('📄 Content-Type:', contentType);
@@ -805,11 +838,22 @@
         
         currentXhr.onerror = function() {
           currentXhr = null;
+          currentDownloadId = null;
           reject(new Error('网络错误'));
         };
         
         currentXhr.onprogress = function(e) {
-          // 首先检查是否收到中断信号
+          // 检查是否在待中断集合中
+          if (downloadId && pendingAbortIds.has(downloadId)) {
+            console.log('🔍 检测到下载ID在待中断集合中，准备中断下载...');
+            pendingAbortIds.delete(downloadId);
+            if (currentXhr) {
+              currentXhr.abort();
+            }
+            return;
+          }
+          
+          // 检查是否收到中断信号
           if (abortSignal === 'active') {
             console.log('🔍 检测到中断信号，准备中断下载...');
             if (currentXhr) {
@@ -824,10 +868,23 @@
           }
         };
         
+        // 在发送前再次检查待中断ID集合
+        if (downloadId && pendingAbortIds.has(downloadId)) {
+          console.log('🛑 发送请求前检测到下载ID在待中断集合中');
+          pendingAbortIds.delete(downloadId);
+          currentXhr = null;
+          currentDownloadId = null;
+          const abortError = new Error('Download aborted before send');
+          abortError.name = 'AbortError';
+          reject(abortError);
+          return;
+        }
+        
         // 在发送前最后检查一次中断信号
         if (abortSignal === 'active') {
           console.log('🛑 发送请求前检测到中断信号');
           currentXhr = null;
+          currentDownloadId = null;
           const abortError = new Error('Download aborted before send');
           abortError.name = 'AbortError';
           reject(abortError);
@@ -886,10 +943,11 @@
         throw error;
       }
     } finally {
-      // 确保清理currentXhr
+      // 确保清理currentXhr和currentDownloadId
       if (currentXhr) {
         currentXhr = null;
       }
+      currentDownloadId = null;
     }
   }
   
