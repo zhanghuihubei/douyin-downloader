@@ -639,9 +639,18 @@ async function getStats() {
  * 保存配置项
  */
 async function saveConfig(key, value) {
+  console.log('🔍 saveConfig 被调用:', {
+    key,
+    value,
+    keyType: typeof key,
+    valueType: typeof value,
+    caller: new Error().stack.split('\n')[2]
+  });
+  
   if (key === undefined) {
     console.error('❌ saveConfig 调用参数无效: key为undefined', {
       value,
+      valueType: typeof value,
       stack: new Error().stack
     });
     throw new Error('Config key must be a non-empty string (received: undefined)');
