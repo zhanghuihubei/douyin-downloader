@@ -238,6 +238,23 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
           stopDownload = true;
 
           // 中断所有正在进行的下载控制器
+          // 通知所有抖音标签页中断下载
+          const tabs = await chrome.tabs.query({ url: 'https://www.douyin.com/*' });
+          const downloadIds = Array.from(inFlightDownloads.keys());
+          console.log(`🆔 暂停时需要中断的下载ID列表: ${downloadIds.join(', ')}`);
+
+          for (const tab of tabs) {
+            try {
+              await chrome.tabs.sendMessage(tab.id, {
+                action: 'abortDownload',
+                timestamp: Date.now(),
+                downloadIds: downloadIds
+              });
+            } catch (error) {
+              console.log('标签页', tab.id, '发送中断消息失败:', error.message);
+            }
+          }
+
           console.log(`🛑 暂停时中断所有 ${inFlightDownloads.size} 个正在进行的下载...`);
           for (const [downloadId, downloadInfo] of inFlightDownloads.entries()) {
             try {
@@ -256,21 +273,6 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
             console.log('🛑 暂停时中断当前下载...');
             currentDownloadController.abort();
             currentDownloadController = null;
-          }
-
-          // 通知所有抖音标签页中断下载
-          const tabs = await chrome.tabs.query({ url: 'https://www.douyin.com/*' });
-          const downloadIds = Array.from(inFlightDownloads.keys());
-          for (const tab of tabs) {
-            try {
-              await chrome.tabs.sendMessage(tab.id, { 
-                action: 'abortDownload',
-                timestamp: Date.now(),
-                downloadIds: downloadIds
-              });
-            } catch (error) {
-              console.log('标签页', tab.id, '发送中断消息失败:', error.message);
-            }
           }
 
           isDownloading = false;
@@ -454,6 +456,31 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       downloadQueue = [];
       console.log(`🗑️ 已清空下载队列，移除了 ${clearedCount} 个待下载视频`);
       
+      // 立即通知所有抖音标签页中断下载（并行执行以提高速度）
+      const tabs = await chrome.tabs.query({ url: 'https://www.douyin.com/*' });
+      console.log(`📢 通知 ${tabs.length} 个抖音标签页中断下载`);
+
+      // 获取所有正在进行的下载ID列表
+      const downloadIds = Array.from(inFlightDownloads.keys());
+      console.log(`🆔 需要中断的下载ID列表: ${downloadIds.join(', ')}`);
+
+      const abortPromises = tabs.map(async (tab) => {
+        try {
+          await chrome.tabs.sendMessage(tab.id, {
+            action: 'abortDownload',
+            timestamp: Date.now(), // 添加时间戳确保消息新鲜度
+            downloadIds: downloadIds // 包含所有需要中断的下载ID
+          });
+          console.log(`✅ 标签页 ${tab.id} 中断消息发送成功`);
+        } catch (error) {
+          console.log(`❌ 标签页 ${tab.id} 发送中断消息失败:`, error.message);
+        }
+      });
+
+      // 等待所有消息发送完成
+      await Promise.allSettled(abortPromises);
+      console.log('📢 所有标签页中断消息发送完成');
+
       // 中断所有正在进行的下载控制器
       console.log(`🛑 中断所有 ${inFlightDownloads.size} 个正在进行的下载...`);
       for (const [downloadId, downloadInfo] of inFlightDownloads.entries()) {
@@ -480,44 +507,20 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         }
         currentDownloadController = null;
       }
-      
-      // 立即通知所有抖音标签页中断下载（并行执行以提高速度）
-      const tabs = await chrome.tabs.query({ url: 'https://www.douyin.com/*' });
-      console.log(`📢 通知 ${tabs.length} 个抖音标签页中断下载`);
-      
-      // 获取所有正在进行的下载ID列表
-      const downloadIds = Array.from(inFlightDownloads.keys());
-      console.log(`🆔 需要中断的下载ID列表: ${downloadIds.join(', ')}`);
-      
-      const abortPromises = tabs.map(async (tab) => {
-        try {
-          await chrome.tabs.sendMessage(tab.id, { 
-            action: 'abortDownload',
-            timestamp: Date.now(), // 添加时间戳确保消息新鲜度
-            downloadIds: downloadIds // 包含所有需要中断的下载ID
-          });
-          console.log(`✅ 标签页 ${tab.id} 中断消息发送成功`);
-        } catch (error) {
-          console.log(`❌ 标签页 ${tab.id} 发送中断消息失败:`, error.message);
-        }
-      });
-      
-      // 等待所有中断消息发送完成（但不阻塞太久）
-      await Promise.allSettled(abortPromises);
-      
+
       // 立即设置isDownloading为false
       isDownloading = false;
       console.log('🔄 已设置isDownloading为false');
-      
+
       // 延迟重置stopDownload标志，给UI足够时间更新
       setTimeout(() => {
         stopDownload = false;
         console.log('🔄 已重置停止下载标志为false');
       }, 2000); // 增加到2秒，确保UI有足够时间响应
-      
+
       console.log('✅ 停止下载操作完成');
-      sendResponse({ 
-        success: true, 
+      sendResponse({
+        success: true,
         clearedCount,
         wasDownloading,
         inFlightCount: inFlightDownloads.size,
