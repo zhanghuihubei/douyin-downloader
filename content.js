@@ -114,12 +114,14 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.action === 'abortDownload') {
     console.log('📥 Content script收到中断下载请求');
     console.log('⏰ 时间戳:', request.timestamp || 'none');
+    console.log('🆔 下载IDs:', request.downloadIds || []);
     
-    // 转发给injected script中断下载（添加时间戳确保消息新鲜度）
+    // 转发给injected script中断下载（添加时间戳确保消息新鲜度，包含所有要中断的ID）
     window.postMessage({
       type: 'TO_DOUYIN_PAGE',
       action: 'abortDownload',
-      timestamp: request.timestamp || Date.now()
+      timestamp: request.timestamp || Date.now(),
+      downloadIds: request.downloadIds || []
     }, '*');
     
     // 给injected script一点时间处理中断

@@ -37,15 +37,38 @@
       console.log('⏰ 中断时间戳:', event.data.timestamp || 'none');
       console.log('🆔 当前下载ID:', currentDownloadId || 'none');
       
-      // 记录待中断的ID（这样即使当前没有XHR，也能在后续处理中检查）
-      if (downloadId) {
-        pendingAbortIds.add(downloadId);
-        console.log('📍 添加待中断ID到集合');
+      // 获取需要中断的所有ID列表
+      const downloadIds = event.data.downloadIds || [];
+      console.log(`📋 需要中断的下载ID列表 (${downloadIds.length}个):`, downloadIds);
+      
+      // 记录所有待中断的ID（这样即使当前没有XHR，也能在后续处理中检查）
+      if (downloadIds && downloadIds.length > 0) {
+        for (const id of downloadIds) {
+          pendingAbortIds.add(id);
+          console.log(`📍 添加待中断ID到集合: ${id}`);
+        }
       }
       
-      if (currentXhr) {
+      // 如果当前正在下载，检查是否应该中断
+      if (currentXhr && currentDownloadId) {
+        const shouldAbort = downloadIds.length === 0 || downloadIds.includes(currentDownloadId);
+        if (shouldAbort) {
+          try {
+            console.log(`🔪 正在中断当前XMLHttpRequest (ID: ${currentDownloadId})...`);
+            currentXhr.abort();
+            console.log('✅ XMLHttpRequest已成功中断');
+          } catch (error) {
+            console.warn('⚠️ 中断XMLHttpRequest时出错:', error.message);
+          }
+          currentXhr = null;
+          currentDownloadId = null;
+        } else {
+          console.log(`ℹ️ 当前下载ID ${currentDownloadId} 不在中断列表中，跳过`);
+        }
+      } else if (currentXhr) {
+        // 即使没有currentDownloadId，如果收到中断请求也要中断
+        console.log('🔪 正在中断当前XMLHttpRequest (无ID)...');
         try {
-          console.log('🔪 正在中断当前XMLHttpRequest...');
           currentXhr.abort();
           console.log('✅ XMLHttpRequest已成功中断');
         } catch (error) {
@@ -54,7 +77,7 @@
         currentXhr = null;
         currentDownloadId = null;
       } else {
-        console.log('ℹ️ 没有正在进行的下载需要中断');
+        console.log(`ℹ️ 没有正在进行的下载需要中断 (pending ID count: ${pendingAbortIds.size})`);
       }
       
       // 额外清理：确保没有残留的下载状态

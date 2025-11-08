@@ -260,9 +260,14 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 
           // 通知所有抖音标签页中断下载
           const tabs = await chrome.tabs.query({ url: 'https://www.douyin.com/*' });
+          const downloadIds = Array.from(inFlightDownloads.keys());
           for (const tab of tabs) {
             try {
-              await chrome.tabs.sendMessage(tab.id, { action: 'abortDownload' });
+              await chrome.tabs.sendMessage(tab.id, { 
+                action: 'abortDownload',
+                timestamp: Date.now(),
+                downloadIds: downloadIds
+              });
             } catch (error) {
               console.log('标签页', tab.id, '发送中断消息失败:', error.message);
             }
@@ -480,11 +485,16 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       const tabs = await chrome.tabs.query({ url: 'https://www.douyin.com/*' });
       console.log(`📢 通知 ${tabs.length} 个抖音标签页中断下载`);
       
+      // 获取所有正在进行的下载ID列表
+      const downloadIds = Array.from(inFlightDownloads.keys());
+      console.log(`🆔 需要中断的下载ID列表: ${downloadIds.join(', ')}`);
+      
       const abortPromises = tabs.map(async (tab) => {
         try {
           await chrome.tabs.sendMessage(tab.id, { 
             action: 'abortDownload',
-            timestamp: Date.now() // 添加时间戳确保消息新鲜度
+            timestamp: Date.now(), // 添加时间戳确保消息新鲜度
+            downloadIds: downloadIds // 包含所有需要中断的下载ID
           });
           console.log(`✅ 标签页 ${tab.id} 中断消息发送成功`);
         } catch (error) {
