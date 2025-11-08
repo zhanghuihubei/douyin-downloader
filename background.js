@@ -57,7 +57,7 @@ chrome.runtime.onStartup.addListener(async () => {
 });
 
 // 保存配置
-async function saveConfig() {
+async function saveBackgroundConfig() {
   try {
     // 验证config对象的完整性
     if (!config || typeof config !== 'object') {
@@ -72,34 +72,46 @@ async function saveConfig() {
       maxDelay: config.maxDelay
     });
     
-    // 保存各个配置项到IndexedDB
-    console.log('🔍 准备调用 DouyinDB.saveConfig，当前 config:', config);
-    console.log('🔍 DouyinDB.saveConfig 函数:', typeof DouyinDB.saveConfig);
+    // 分别保存每个配置项到IndexedDB
+    // 验证并保存 autoDownload
+    if (config.autoDownload !== undefined) {
+      console.log('💾 保存 autoDownload:', config.autoDownload);
+      await DouyinDB.saveConfig('autoDownload', config.autoDownload);
+    }
     
-    // 分别保存每个配置项，以便更好地定位问题
-    console.log('🔍 保存 autoDownload:', config.autoDownload);
-    await DouyinDB.saveConfig('autoDownload', config.autoDownload);
+    // 验证并保存 checkInterval
+    if (config.checkInterval !== undefined) {
+      console.log('💾 保存 checkInterval:', config.checkInterval);
+      await DouyinDB.saveConfig('checkInterval', config.checkInterval);
+    }
     
-    console.log('🔍 保存 checkInterval:', config.checkInterval);
-    await DouyinDB.saveConfig('checkInterval', config.checkInterval);
+    // 验证并保存 lastCheckTime
+    if (config.lastCheckTime !== undefined) {
+      console.log('💾 保存 lastCheckTime:', config.lastCheckTime);
+      await DouyinDB.saveConfig('lastCheckTime', config.lastCheckTime);
+    }
     
-    console.log('🔍 保存 lastCheckTime:', config.lastCheckTime);
-    await DouyinDB.saveConfig('lastCheckTime', config.lastCheckTime);
+    // 验证并保存 minDelay
+    if (config.minDelay !== undefined) {
+      console.log('💾 保存 minDelay:', config.minDelay);
+      await DouyinDB.saveConfig('minDelay', config.minDelay);
+    }
     
-    console.log('🔍 保存 minDelay:', config.minDelay);
-    await DouyinDB.saveConfig('minDelay', config.minDelay);
+    // 验证并保存 maxDelay
+    if (config.maxDelay !== undefined) {
+      console.log('💾 保存 maxDelay:', config.maxDelay);
+      await DouyinDB.saveConfig('maxDelay', config.maxDelay);
+    }
     
-    console.log('🔍 保存 maxDelay:', config.maxDelay);
-    await DouyinDB.saveConfig('maxDelay', config.maxDelay);
-    
-    const results = [true, true, true, true, true];
-    
-    console.log('✅ 配置保存成功', results);
+    console.log('✅ 配置保存成功');
   } catch (error) {
     console.error('❌ 保存配置失败:', error);
-    console.error('错误类型:', error.constructor.name);
-    console.error('错误消息:', error.message);
-    console.error('错误代码:', error.code);
+    console.error('错误详情:', {
+      name: error.name,
+      message: error.message,
+      code: error.code,
+      stack: error.stack
+    });
     throw error;
   }
 }
@@ -212,7 +224,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     config.autoDownload = !config.autoDownload;
     console.log('🔄 切换后autoDownload:', config.autoDownload);
     
-    saveConfig().then(() => {
+    saveBackgroundConfig().then(() => {
       console.log('✅ 配置保存成功');
       if (config.autoDownload) {
         startAutoDownload();
