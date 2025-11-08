@@ -661,7 +661,10 @@ async function stopDownload() {
     
     if (response.success) {
       console.log('✅ 已发送停止下载指令');
-      alert('已发送停止指令，下载将在当前视频完成后停止');
+      const message = response.clearedCount 
+        ? `已停止下载并清空队列，移除了 ${response.clearedCount} 个待下载视频`
+        : '已发送停止指令，下载将在当前视频完成后停止';
+      alert(message);
       await loadData(); // 重新加载数据以更新状态
     } else {
       alert('停止失败: ' + response.error);
