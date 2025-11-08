@@ -415,6 +415,11 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       });
       stopDownload = true;
       
+      // 清空下载队列
+      const clearedCount = downloadQueue.length;
+      downloadQueue = [];
+      console.log(`🗑️ 已清空下载队列，移除了 ${clearedCount} 个待下载视频`);
+      
       // 如果有正在进行的下载，尝试中断它
       if (currentDownloadController) {
         console.log('🛑 中断当前下载...');
@@ -434,8 +439,8 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       
       // 立即设置isDownloading为false，确保UI状态更新
       isDownloading = false;
-      console.log('✅ 已设置停止标志并重置下载状态');
-      sendResponse({ success: true });
+      console.log('✅ 已停止下载并清空队列');
+      sendResponse({ success: true, clearedCount });
     })();
     return true;
   }
@@ -589,11 +594,13 @@ async function downloadVideo(videoData) {
     console.log('使用标签页:', tab.id, tab.title);
     
     // 发送下载请求到content script（包含中断信号）
+    // 只有当控制器被abort时才传递'active'信号
+    const isAborted = currentDownloadController && currentDownloadController.signal.aborted;
     const response = await chrome.tabs.sendMessage(tab.id, {
       action: 'downloadVideoInPage',
       videoUrl: videoUrl,
       filename: filename,
-      abortSignal: currentDownloadController.signal ? 'active' : 'inactive'
+      abortSignal: isAborted ? 'active' : 'inactive'
     });
     
     if (response && response.success) {
@@ -757,6 +764,10 @@ function startAutoDownload() {
     return;
   }
   console.log('启动自动下载，检查间隔:', config.checkInterval, 'ms');
+  
+  // 重置停止下载标志，允许新的下载继续
+  stopDownload = false;
+  console.log('🔄 已重置停止下载标志');
   
   // 立即执行一次
   checkAndDownloadNew();

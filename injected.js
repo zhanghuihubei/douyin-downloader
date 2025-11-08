@@ -755,9 +755,9 @@
         currentXhr.open('GET', videoUrl, true);
         currentXhr.responseType = 'blob';
         
-        // 设置必要的请求头以绕过防盗链
-        currentXhr.setRequestHeader('Referer', 'https://www.douyin.com/');
-        currentXhr.setRequestHeader('User-Agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
+        // 设置允许的请求头（Referer和User-Agent是unsafe headers，不能设置）
+        // currentXhr.setRequestHeader('Referer', 'https://www.douyin.com/'); // 浏览器阻止
+        // currentXhr.setRequestHeader('User-Agent', 'Mozilla/5.0...'); // 浏览器阻止
         currentXhr.setRequestHeader('Accept', '*/*');
         
         // 处理中断

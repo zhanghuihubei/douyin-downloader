@@ -163,7 +163,10 @@ async function stopDownload() {
     const response = await chrome.runtime.sendMessage({ action: 'stopDownload' });
     
     if (response.success) {
-      showNotification('停止下载', '已发送停止指令，下载将在当前视频完成后停止');
+      const message = response.clearedCount 
+        ? `已停止下载并清空队列，移除了 ${response.clearedCount} 个待下载视频`
+        : '已停止下载';
+      showNotification('停止下载', message);
       await updateStatus();
     } else {
       alert('停止失败: ' + response.error);
