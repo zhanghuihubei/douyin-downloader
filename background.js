@@ -55,15 +55,29 @@ chrome.runtime.onStartup.addListener(async () => {
 // 保存配置
 async function saveConfig() {
   try {
+    // 验证config对象的完整性
+    if (!config || typeof config !== 'object') {
+      throw new Error('Invalid config object');
+    }
+    
+    console.log('📝 准备保存配置:', {
+      autoDownload: config.autoDownload,
+      checkInterval: config.checkInterval,
+      lastCheckTime: config.lastCheckTime,
+      minDelay: config.minDelay,
+      maxDelay: config.maxDelay
+    });
+    
     // 保存各个配置项到IndexedDB
-    await Promise.all([
+    const results = await Promise.all([
       DouyinDB.saveConfig('autoDownload', config.autoDownload),
       DouyinDB.saveConfig('checkInterval', config.checkInterval),
       DouyinDB.saveConfig('lastCheckTime', config.lastCheckTime),
       DouyinDB.saveConfig('minDelay', config.minDelay),
       DouyinDB.saveConfig('maxDelay', config.maxDelay)
     ]);
-    console.log('✅ 配置保存成功');
+    
+    console.log('✅ 配置保存成功', results);
   } catch (error) {
     console.error('❌ 保存配置失败:', error);
     console.error('错误类型:', error.constructor.name);
