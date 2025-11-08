@@ -5,12 +5,15 @@
   
   console.log('抖音下载器注入脚本已加载');
   
+  // 全局变量存储当前的XMLHttpRequest，用于中断
+  let currentXhr = null;
+  
   // 监听来自content script的消息
   window.addEventListener('message', async (event) => {
     if (event.source !== window) return;
     if (!event.data.type || event.data.type !== 'TO_DOUYIN_PAGE') return;
     
-    const { action, userId, videoUrl, filename } = event.data;
+    const { action, userId, videoUrl, filename, abortSignal } = event.data;
     
     if (action === 'getFollowingList') {
       await getFollowingList();
@@ -22,7 +25,17 @@
     
     if (action === 'downloadVideo') {
       console.log('📥 Injected script收到下载请求:', filename);
-      await downloadVideoInPage(videoUrl, filename);
+      console.log('🚦 中断信号状态:', abortSignal || 'none');
+      await downloadVideoInPage(videoUrl, filename, abortSignal);
+    }
+    
+    if (action === 'abortDownload') {
+      console.log('🛑 Injected script收到中断下载请求');
+      if (currentXhr) {
+        currentXhr.abort();
+        currentXhr = null;
+        console.log('✅ XMLHttpRequest已中断');
+      }
     }
   });
   
@@ -717,47 +730,69 @@
   }
   
   // 在真正的页面上下文中下载视频（没有CORS限制）
-  async function downloadVideoInPage(videoUrl, filename) {
+  async function downloadVideoInPage(videoUrl, filename, abortSignal) {
     console.log('🔄 使用XMLHttpRequest下载（绕过fetch hook）...');
     console.log('🔗 URL:', videoUrl);
+    console.log('🚦 中断信号:', abortSignal || 'none');
+    
+    // 如果已经有正在进行的下载，先中断它
+    if (currentXhr) {
+      console.log('⚠️ 检测到正在进行的下载，先中断...');
+      currentXhr.abort();
+      currentXhr = null;
+    }
     
     try {
       // 使用XMLHttpRequest绕过抖音对fetch的Hook
       const blob = await new Promise((resolve, reject) => {
-        const xhr = new XMLHttpRequest();
-        xhr.open('GET', videoUrl, true);
-        xhr.responseType = 'blob';
+        currentXhr = new XMLHttpRequest();
+        currentXhr.open('GET', videoUrl, true);
+        currentXhr.responseType = 'blob';
         
         // 设置必要的请求头以绕过防盗链
-        xhr.setRequestHeader('Referer', 'https://www.douyin.com/');
-        xhr.setRequestHeader('User-Agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
-        xhr.setRequestHeader('Accept', '*/*');
+        currentXhr.setRequestHeader('Referer', 'https://www.douyin.com/');
+        currentXhr.setRequestHeader('User-Agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
+        currentXhr.setRequestHeader('Accept', '*/*');
         
-        // 不设置withCredentials，避免CORS问题
-        // xhr.withCredentials = false;
+        // 处理中断
+        currentXhr.onabort = function() {
+          console.log('🛑 XMLHttpRequest被中断');
+          currentXhr = null;
+          reject(new Error('Download aborted'));
+        };
         
-        xhr.onload = function() {
-          if (xhr.status === 200) {
-            console.log('📄 Content-Type:', xhr.getResponseHeader('Content-Type'));
-            console.log('📄 Content-Length:', xhr.getResponseHeader('Content-Length'));
-            resolve(xhr.response);
+        currentXhr.onload = function() {
+          currentXhr = null;
+          if (currentXhr && currentXhr.status === 200) {
+            console.log('📄 Content-Type:', currentXhr.getResponseHeader('Content-Type'));
+            console.log('📄 Content-Length:', currentXhr.getResponseHeader('Content-Length'));
+            resolve(currentXhr.response);
           } else {
-            reject(new Error(`HTTP ${xhr.status}: ${xhr.statusText}`));
+            reject(new Error(`HTTP ${currentXhr.status}: ${currentXhr.statusText}`));
           }
         };
         
-        xhr.onerror = function() {
+        currentXhr.onerror = function() {
+          currentXhr = null;
           reject(new Error('网络错误'));
         };
         
-        xhr.onprogress = function(e) {
+        currentXhr.onprogress = function(e) {
+          // 检查是否收到中断信号
+          if (abortSignal === 'active' && Math.random() < 0.01) { // 随机检查，避免频繁检查
+            console.log('🔍 检测到中断信号，准备中断下载...');
+            if (currentXhr) {
+              currentXhr.abort();
+            }
+          }
+          
           if (e.lengthComputable) {
             const percent = ((e.loaded / e.total) * 100).toFixed(1);
             console.log(`📥 下载进度: ${percent}% (${(e.loaded / 1024 / 1024).toFixed(2)}MB / ${(e.total / 1024 / 1024).toFixed(2)}MB)`);
           }
         };
         
-        xhr.send();
+        currentXhr.send();
       });
       
       console.log('✅ Blob下载完成，大小:', (blob.size / 1024 / 1024).toFixed(2), 'MB');
@@ -798,9 +833,18 @@
       console.log('✅ 下载触发成功');
       
     } catch (error) {
-      console.error('❌ 页面上下文下载失败:', error);
-      console.error('错误详情:', error.stack);
+      if (error.message === 'Download aborted') {
+        console.log('🛑 下载被用户中断');
+      } else {
+        console.error('❌ 页面上下文下载失败:', error);
+        console.error('错误详情:', error.stack);
+      }
       throw error;
+    } finally {
+      // 确保清理currentXhr
+      if (currentXhr) {
+        currentXhr = null;
+      }
     }
   }
   

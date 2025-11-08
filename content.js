@@ -93,17 +93,30 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.action === 'downloadVideoInPage') {
     console.log('📥 Content script收到下载请求:', request.filename);
     console.log('🔀 转发给injected script（真正的页面上下文）...');
+    console.log('🚦 中断信号状态:', request.abortSignal || 'none');
     
     // 转发给injected script下载（它在真正的页面上下文，没有CORS限制）
     window.postMessage({
       type: 'TO_DOUYIN_PAGE',
       action: 'downloadVideo',
       videoUrl: request.videoUrl,
-      filename: request.filename
+      filename: request.filename,
+      abortSignal: request.abortSignal || 'inactive'
     }, '*');
     
     // 立即返回成功（实际下载由injected script处理）
     sendResponse({ success: true, downloadId: 'injected-' + Date.now() });
+    return true;
+  }
+  
+  if (request.action === 'abortDownload') {
+    console.log('📥 Content script收到中断下载请求');
+    // 转发给injected script中断下载
+    window.postMessage({
+      type: 'TO_DOUYIN_PAGE',
+      action: 'abortDownload'
+    }, '*');
+    sendResponse({ success: true });
     return true;
   }
   
