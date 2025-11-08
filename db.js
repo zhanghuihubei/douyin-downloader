@@ -647,6 +647,24 @@ async function saveConfig(key, value) {
     caller: new Error().stack.split('\n')[2]
   });
   
+  // 检查参数顺序是否错误
+  if (typeof key === 'object' && key !== null && typeof value === 'string') {
+    console.warn('⚠️ 检测到可能的参数顺序错误，正在自动纠正...');
+    console.warn('原始参数:', { key, value });
+    // 交换参数
+    const temp = key;
+    key = value;
+    value = temp;
+    console.warn('纠正后参数:', { key, value });
+  }
+  
+  // 检查是否只传了一个参数（对象）
+  if (typeof key === 'object' && key !== null && value === undefined) {
+    console.error('❌ saveConfig 调用错误：只传了一个对象参数，需要 key 和 value 两个参数');
+    console.error('收到的参数:', key);
+    throw new Error('saveConfig 需要两个参数：key (字符串) 和 value (任意类型)');
+  }
+  
   if (key === undefined) {
     console.error('❌ saveConfig 调用参数无效: key为undefined', {
       value,
