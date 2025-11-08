@@ -59,9 +59,17 @@ async function updateStatus() {
       
       // 更新下载队列
       document.getElementById('queueLength').textContent = status.queueLength;
-      
+
       // 更新已下载数量
       document.getElementById('downloadedCount').textContent = status.downloadedCount;
+
+      // 添加调试信息显示（仅在控制台）
+      console.log('🔍 调试信息 - 当前状态:', {
+        isDownloading: status.isDownloading,
+        queueLength: status.queueLength,
+        stopDownload: status.stopDownload,
+        autoDownload: status.autoDownload
+      });
       
       // 更新上次检查时间
       if (status.lastCheckTime) {
@@ -175,8 +183,18 @@ async function scanNow() {
 
 // 停止下载
 async function stopDownload() {
+  const button = document.getElementById('stopDownload');
+  const originalText = button.innerHTML;
+  const originalClass = button.className;
+  
   try {
     console.log('🛑 用户点击停止下载按钮');
+    
+    // 立即更新按钮状态给用户反馈
+    button.disabled = true;
+    button.innerHTML = '⏳ 正在停止...';
+    button.className = 'btn btn-warning';
+    
     const response = await chrome.runtime.sendMessage({ action: 'stopDownload' });
     
     if (response.success) {
@@ -186,6 +204,11 @@ async function stopDownload() {
           ? `已停止下载并清空队列，移除了 ${response.clearedCount} 个待下载视频`
           : '已停止下载'
       );
+      
+      // 显示成功状态
+      button.innerHTML = '✅ 已停止';
+      button.className = 'btn btn-success';
+      
       showNotification('停止下载', message);
       
       // 立即更新状态，确保UI反映最新情况
@@ -194,13 +217,39 @@ async function stopDownload() {
       // 再次更新状态，确保所有状态都正确
       setTimeout(async () => {
         await updateStatus();
-      }, 500);
+        // 恢复按钮状态
+        button.disabled = false;
+        button.innerHTML = originalText;
+        button.className = originalClass;
+      }, 1500);
     } else {
       console.error('❌ 停止下载失败:', response.error);
+      
+      // 显示失败状态
+      button.innerHTML = '❌ 停止失败';
+      button.className = 'btn btn-danger';
+      
+      setTimeout(() => {
+        button.disabled = false;
+        button.innerHTML = originalText;
+        button.className = originalClass;
+      }, 2000);
+      
       alert('停止失败: ' + response.error);
     }
   } catch (error) {
     console.error('❌ 停止下载异常:', error);
+    
+    // 显示错误状态
+    button.innerHTML = '❌ 停止异常';
+    button.className = 'btn btn-danger';
+    
+    setTimeout(() => {
+      button.disabled = false;
+      button.innerHTML = originalText;
+      button.className = originalClass;
+    }, 2000);
+    
     alert('停止失败: ' + error.message);
   }
 }

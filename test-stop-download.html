@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>下载停止功能测试</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .test-section {
+            margin: 20px 0;
+            padding: 15px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+        }
+        .status {
+            background: #f0f8ff;
+            padding: 10px;
+            border-radius: 3px;
+            margin: 10px 0;
+        }
+        .error {
+            background: #ffe6e6;
+            color: #cc0000;
+        }
+        .success {
+            background: #e6ffe6;
+            color: #006600;
+        }
+        .log {
+            background: #f5f5f5;
+            padding: 10px;
+            border-radius: 3px;
+            font-family: monospace;
+            font-size: 12px;
+            max-height: 300px;
+            overflow-y: auto;
+            white-space: pre-wrap;
+        }
+        button {
+            padding: 8px 16px;
+            margin: 5px;
+            cursor: pointer;
+            border: none;
+            border-radius: 3px;
+        }
+        .btn-primary { background: #007bff; color: white; }
+        .btn-danger { background: #dc3545; color: white; }
+        .btn-success { background: #28a745; color: white; }
+    </style>
+</head>
+<body>
+    <h1>抖音下载器 - 停止功能测试</h1>
+    
+    <div class="test-section">
+        <h2>测试说明</h2>
+        <p>此页面用于测试下载停止功能是否正常工作。</p>
+        <p><strong>修复内容：</strong></p>
+        <ul>
+            <li>✅ 改进了中断信号传递机制</li>
+            <li>✅ 增强了XMLHttpRequest的中断检查</li>
+            <li>✅ 优化了队列处理中的停止响应</li>
+            <li>✅ 改善了UI反馈和状态同步</li>
+            <li>✅ 增加了详细的调试日志</li>
+        </ul>
+    </div>
+    
+    <div class="test-section">
+        <h2>当前状态</h2>
+        <div id="status" class="status">正在加载状态...</div>
+        <button onclick="checkStatus()" class="btn-primary">刷新状态</button>
+    </div>
+    
+    <div class="test-section">
+        <h2>停止功能测试</h2>
+        <p>点击下面的按钮测试停止功能：</p>
+        <button onclick="testStopDownload()" class="btn-danger">测试停止下载</button>
+        <button onclick="clearLog()" class="btn-secondary">清空日志</button>
+        <div id="testResult" class="status" style="margin-top: 10px;"></div>
+    </div>
+    
+    <div class="test-section">
+        <h2>调试日志</h2>
+        <div id="log" class="log">等待日志输出...</div>
+    </div>
+    
+    <script>
+        let logMessages = [];
+        
+        function log(message, type = 'info') {
+            const timestamp = new Date().toLocaleTimeString();
+            const logMessage = `[${timestamp}] ${message}`;
+            logMessages.push(logMessage);
+            
+            const logDiv = document.getElementById('log');
+            logDiv.textContent = logMessages.join('\n');
+            logDiv.scrollTop = logDiv.scrollHeight;
+            
+            console.log(logMessage);
+        }
+        
+        function clearLog() {
+            logMessages = [];
+            document.getElementById('log').textContent = '日志已清空...';
+        }
+        
+        async function checkStatus() {
+            try {
+                log('检查扩展状态...');
+                const response = await chrome.runtime.sendMessage({ action: 'getStatus' });
+                
+                if (response.success) {
+                    const { status } = response;
+                    const statusDiv = document.getElementById('status');
+                    statusDiv.className = 'status success';
+                    statusDiv.innerHTML = `
+                        <strong>扩展状态正常</strong><br>
+                        正在下载: ${status.isDownloading ? '是' : '否'}<br>
+                        队列长度: ${status.queueLength}<br>
+                        停止标志: ${status.stopDownload ? '已设置' : '未设置'}<br>
+                        自动下载: ${status.autoDownload ? '已启用' : '已禁用'}<br>
+                        已下载: ${status.downloadedCount} 个视频
+                    `;
+                    log('状态检查完成');
+                } else {
+                    throw new Error(response.error || '获取状态失败');
+                }
+            } catch (error) {
+                log('状态检查失败: ' + error.message, 'error');
+                const statusDiv = document.getElementById('status');
+                statusDiv.className = 'status error';
+                statusDiv.textContent = '状态检查失败: ' + error.message;
+            }
+        }
+        
+        async function testStopDownload() {
+            const resultDiv = document.getElementById('testResult');
+            resultDiv.textContent = '正在测试停止功能...';
+            resultDiv.className = 'status';
+            
+            try {
+                log('开始测试停止下载功能...');
+                
+                // 首先检查当前状态
+                const statusResponse = await chrome.runtime.sendMessage({ action: 'getStatus' });
+                if (!statusResponse.success) {
+                    throw new Error('无法获取当前状态');
+                }
+                
+                const { status } = statusResponse;
+                log(`当前状态 - 下载中: ${status.isDownloading}, 队列: ${status.queueLength}`);
+                
+                // 发送停止命令
+                log('发送停止下载命令...');
+                const response = await chrome.runtime.sendMessage({ action: 'stopDownload' });
+                
+                if (response.success) {
+                    log('停止命令发送成功: ' + response.message);
+                    resultDiv.className = 'status success';
+                    resultDiv.innerHTML = `
+                        <strong>✅ 停止功能测试通过</strong><br>
+                        响应消息: ${response.message}<br>
+                        清空队列: ${response.clearedCount || 0} 个视频<br>
+                        之前在下载: ${response.wasDownloading ? '是' : '否'}
+                    `;
+                    
+                    // 等待一秒后再次检查状态
+                    setTimeout(async () => {
+                        log('检查停止后的状态...');
+                        await checkStatus();
+                    }, 1000);
+                    
+                } else {
+                    throw new Error(response.error || '停止命令失败');
+                }
+                
+            } catch (error) {
+                log('停止功能测试失败: ' + error.message, 'error');
+                resultDiv.className = 'status error';
+                resultDiv.textContent = '❌ 停止功能测试失败: ' + error.message;
+            }
+        }
+        
+        // 页面加载时自动检查状态
+        document.addEventListener('DOMContentLoaded', () => {
+            log('测试页面加载完成');
+            checkStatus();
+        });
+    </script>
+</body>
+</html>

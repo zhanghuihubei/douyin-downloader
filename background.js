@@ -417,51 +417,64 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     (async () => {
       console.log('🛑 收到停止下载指令，当前状态:', {
         isDownloading,
-        queueLength: downloadQueue.length
+        queueLength: downloadQueue.length,
+        hasController: !!currentDownloadController
       });
       
       // 先记录当前状态，用于响应
       const wasDownloading = isDownloading;
       const clearedCount = downloadQueue.length;
       
-      // 设置停止标志
+      // 立即设置停止标志（这是最重要的）
       stopDownload = true;
+      console.log('🚦 已设置停止下载标志为true');
       
       // 清空下载队列
       downloadQueue = [];
       console.log(`🗑️ 已清空下载队列，移除了 ${clearedCount} 个待下载视频`);
       
-      // 如果有正在进行的下载，尝试中断它
+      // 如果有正在进行的下载，立即中断它
       if (currentDownloadController) {
-        console.log('🛑 中断当前下载...');
+        console.log('🛑 立即中断当前下载控制器...');
         try {
           currentDownloadController.abort();
+          console.log('✅ 下载控制器已中断');
         } catch (error) {
-          console.log('中断下载控制器时出错:', error.message);
+          console.log('❌ 中断下载控制器时出错:', error.message);
         }
         currentDownloadController = null;
       }
       
-      // 通知所有抖音标签页中断下载
+      // 立即通知所有抖音标签页中断下载（并行执行以提高速度）
       const tabs = await chrome.tabs.query({ url: 'https://www.douyin.com/*' });
-      for (const tab of tabs) {
-        try {
-          await chrome.tabs.sendMessage(tab.id, { action: 'abortDownload' });
-        } catch (error) {
-          console.log('标签页', tab.id, '发送中断消息失败:', error.message);
-        }
-      }
+      console.log(`📢 通知 ${tabs.length} 个抖音标签页中断下载`);
       
-      // 设置isDownloading为false
+      const abortPromises = tabs.map(async (tab) => {
+        try {
+          await chrome.tabs.sendMessage(tab.id, { 
+            action: 'abortDownload',
+            timestamp: Date.now() // 添加时间戳确保消息新鲜度
+          });
+          console.log(`✅ 标签页 ${tab.id} 中断消息发送成功`);
+        } catch (error) {
+          console.log(`❌ 标签页 ${tab.id} 发送中断消息失败:`, error.message);
+        }
+      });
+      
+      // 等待所有中断消息发送完成（但不阻塞太久）
+      await Promise.allSettled(abortPromises);
+      
+      // 立即设置isDownloading为false
       isDownloading = false;
+      console.log('🔄 已设置isDownloading为false');
       
       // 延迟重置stopDownload标志，给UI足够时间更新
       setTimeout(() => {
         stopDownload = false;
-        console.log('🔄 已重置停止下载标志');
-      }, 1000);
+        console.log('🔄 已重置停止下载标志为false');
+      }, 2000); // 增加到2秒，确保UI有足够时间响应
       
-      console.log('✅ 已停止下载并清空队列');
+      console.log('✅ 停止下载操作完成');
       sendResponse({ 
         success: true, 
         clearedCount,
@@ -543,6 +556,13 @@ async function processQueue() {
     
     const video = downloadQueue.shift();
     console.log('正在下载:', video.title, '剩余:', downloadQueue.length);
+    
+    // 在下载前再次检查停止标志
+    if (stopDownload) {
+      console.log('🛑 下载前检查到停止指令，取消:', video.title);
+      break;
+    }
+    
     try {
       const downloadId = await downloadVideo(video);
       console.log('✅ 下载已开始，ID:', downloadId);
@@ -569,7 +589,22 @@ async function processQueue() {
     if (downloadQueue.length > 0) {
       const delay = getRandomDelay(config.minDelay, config.maxDelay);
       console.log('⏱️ 等待', (delay/1000).toFixed(1), '秒后继续下载...');
-      await sleep(delay);
+      
+      // 在等待期间也要检查停止信号（使用可中断的等待）
+      const waitStart = Date.now();
+      while (Date.now() - waitStart < delay) {
+        if (stopDownload) {
+          console.log('🛑 等待期间收到停止指令，中断等待');
+          break;
+        }
+        await sleep(100); // 每100ms检查一次
+      }
+      
+      // 如果在等待期间收到停止指令，退出循环
+      if (stopDownload) {
+        console.log('🛑 等待期间检测到停止指令，终止队列处理');
+        break;
+      }
     }
   }
   
@@ -591,7 +626,7 @@ async function downloadVideo(videoData) {
   console.log('作者:', videoData.author);
   console.log('视频URL:', videoData.videoUrl);
   
-  // 在开始下载前检查是否需要停止
+  // 在开始下载前检查是否需要停止（提前检查）
   if (stopDownload) {
     console.log('🛑 检测到停止标志，取消下载:', videoData.title);
     // 创建一个AbortError，这样上层能正确识别为中断
@@ -602,6 +637,16 @@ async function downloadVideo(videoData) {
   
   // 创建新的下载控制器
   currentDownloadController = new AbortController();
+  
+  // 再次检查停止标志（防止在创建控制器期间收到停止指令）
+  if (stopDownload) {
+    console.log('🛑 控制器创建后检测到停止标志，立即中断:', videoData.title);
+    currentDownloadController.abort();
+    currentDownloadController = null;
+    const error = new Error('Download stopped by user');
+    error.name = 'AbortError';
+    throw error;
+  }
   
   const { videoUrl, title, author, awemeId } = videoData;
   
@@ -631,14 +676,14 @@ async function downloadVideo(videoData) {
     const tab = tabs[0];
     console.log('使用标签页:', tab.id, tab.title);
     
-    // 发送下载请求到content script（包含中断信号）
-    // 只有当控制器被abort时才传递'active'信号
-    const isAborted = currentDownloadController && currentDownloadController.signal.aborted;
+    // 发送下载请求到content script（包含中断信号和控制器引用）
+    // 直接传递AbortController的aborted状态
     const response = await chrome.tabs.sendMessage(tab.id, {
       action: 'downloadVideoInPage',
       videoUrl: videoUrl,
       filename: filename,
-      abortSignal: isAborted ? 'active' : 'inactive'
+      abortSignal: currentDownloadController.signal.aborted ? 'active' : 'inactive',
+      downloadId: Date.now() // 用于标识这次下载请求
     });
     
     if (response && response.success) {

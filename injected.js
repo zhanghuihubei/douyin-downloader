@@ -31,17 +31,23 @@
     
     if (action === 'abortDownload') {
       console.log('🛑 Injected script收到中断下载请求');
+      console.log('⏰ 中断时间戳:', event.data.timestamp || 'none');
+      
       if (currentXhr) {
         try {
+          console.log('🔪 正在中断当前XMLHttpRequest...');
           currentXhr.abort();
-          console.log('✅ XMLHttpRequest已中断');
+          console.log('✅ XMLHttpRequest已成功中断');
         } catch (error) {
           console.warn('⚠️ 中断XMLHttpRequest时出错:', error.message);
         }
         currentXhr = null;
       } else {
-        console.log('ℹ️ 没有正在进行的下载');
+        console.log('ℹ️ 没有正在进行的下载需要中断');
       }
+      
+      // 额外清理：确保没有残留的下载状态
+      console.log('🧹 清理下载完成状态');
     }
   });
   
@@ -741,23 +747,32 @@
     console.log('🔗 URL:', videoUrl);
     console.log('🚦 中断信号:', abortSignal || 'none');
     
+    // 提前检查中断信号 - 如果一开始就是active，直接返回
+    if (abortSignal === 'active') {
+      console.log('🛑 下载开始前就收到中断信号，直接取消');
+      return;
+    }
+    
     // 如果已经有正在进行的下载，先中断它
     if (currentXhr) {
       console.log('⚠️ 检测到正在进行的下载，先中断...');
-      currentXhr.abort();
+      try {
+        currentXhr.abort();
+      } catch (error) {
+        console.warn('中断现有下载时出错:', error.message);
+      }
       currentXhr = null;
     }
     
     try {
       // 使用XMLHttpRequest绕过抖音对fetch的Hook
       const blob = await new Promise((resolve, reject) => {
+        // 创建XMLHttpRequest
         currentXhr = new XMLHttpRequest();
         currentXhr.open('GET', videoUrl, true);
         currentXhr.responseType = 'blob';
         
-        // 设置允许的请求头（Referer和User-Agent是unsafe headers，不能设置）
-        // currentXhr.setRequestHeader('Referer', 'https://www.douyin.com/'); // 浏览器阻止
-        // currentXhr.setRequestHeader('User-Agent', 'Mozilla/5.0...'); // 浏览器阻止
+        // 设置允许的请求头
         currentXhr.setRequestHeader('Accept', '*/*');
         
         // 处理中断
@@ -794,7 +809,7 @@
         };
         
         currentXhr.onprogress = function(e) {
-          // 检查是否收到中断信号
+          // 首先检查是否收到中断信号
           if (abortSignal === 'active') {
             console.log('🔍 检测到中断信号，准备中断下载...');
             if (currentXhr) {
@@ -809,6 +824,17 @@
           }
         };
         
+        // 在发送前最后检查一次中断信号
+        if (abortSignal === 'active') {
+          console.log('🛑 发送请求前检测到中断信号');
+          currentXhr = null;
+          const abortError = new Error('Download aborted before send');
+          abortError.name = 'AbortError';
+          reject(abortError);
+          return;
+        }
+        
+        console.log('📤 发送XMLHttpRequest...');
         currentXhr.send();
       });
       

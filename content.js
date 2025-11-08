@@ -94,6 +94,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     console.log('📥 Content script收到下载请求:', request.filename);
     console.log('🔀 转发给injected script（真正的页面上下文）...');
     console.log('🚦 中断信号状态:', request.abortSignal || 'none');
+    console.log('🆔 下载ID:', request.downloadId || 'none');
     
     // 转发给injected script下载（它在真正的页面上下文，没有CORS限制）
     window.postMessage({
@@ -101,22 +102,30 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       action: 'downloadVideo',
       videoUrl: request.videoUrl,
       filename: request.filename,
-      abortSignal: request.abortSignal || 'inactive'
+      abortSignal: request.abortSignal || 'inactive',
+      downloadId: request.downloadId || Date.now()
     }, '*');
     
     // 立即返回成功（实际下载由injected script处理）
-    sendResponse({ success: true, downloadId: 'injected-' + Date.now() });
+    sendResponse({ success: true, downloadId: 'injected-' + (request.downloadId || Date.now()) });
     return true;
   }
   
   if (request.action === 'abortDownload') {
     console.log('📥 Content script收到中断下载请求');
-    // 转发给injected script中断下载
+    console.log('⏰ 时间戳:', request.timestamp || 'none');
+    
+    // 转发给injected script中断下载（添加时间戳确保消息新鲜度）
     window.postMessage({
       type: 'TO_DOUYIN_PAGE',
-      action: 'abortDownload'
+      action: 'abortDownload',
+      timestamp: request.timestamp || Date.now()
     }, '*');
-    sendResponse({ success: true });
+    
+    // 给injected script一点时间处理中断
+    setTimeout(() => {
+      sendResponse({ success: true });
+    }, 100);
     return true;
   }
   
