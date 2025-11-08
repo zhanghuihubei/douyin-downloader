@@ -3,6 +3,10 @@
 // 加载IndexedDB管理模块
 importScripts('db.js');
 
+// 调试：检查 DouyinDB 对象
+console.log('🔍 DouyinDB 对象已加载:', typeof DouyinDB);
+console.log('🔍 DouyinDB.saveConfig:', typeof DouyinDB.saveConfig);
+
 let downloadQueue = [];
 let isDownloading = false;
 let stopDownload = false; // 停止下载标志
@@ -69,13 +73,26 @@ async function saveConfig() {
     });
     
     // 保存各个配置项到IndexedDB
-    const results = await Promise.all([
-      DouyinDB.saveConfig('autoDownload', config.autoDownload),
-      DouyinDB.saveConfig('checkInterval', config.checkInterval),
-      DouyinDB.saveConfig('lastCheckTime', config.lastCheckTime),
-      DouyinDB.saveConfig('minDelay', config.minDelay),
-      DouyinDB.saveConfig('maxDelay', config.maxDelay)
-    ]);
+    console.log('🔍 准备调用 DouyinDB.saveConfig，当前 config:', config);
+    console.log('🔍 DouyinDB.saveConfig 函数:', typeof DouyinDB.saveConfig);
+    
+    // 分别保存每个配置项，以便更好地定位问题
+    console.log('🔍 保存 autoDownload:', config.autoDownload);
+    await DouyinDB.saveConfig('autoDownload', config.autoDownload);
+    
+    console.log('🔍 保存 checkInterval:', config.checkInterval);
+    await DouyinDB.saveConfig('checkInterval', config.checkInterval);
+    
+    console.log('🔍 保存 lastCheckTime:', config.lastCheckTime);
+    await DouyinDB.saveConfig('lastCheckTime', config.lastCheckTime);
+    
+    console.log('🔍 保存 minDelay:', config.minDelay);
+    await DouyinDB.saveConfig('minDelay', config.minDelay);
+    
+    console.log('🔍 保存 maxDelay:', config.maxDelay);
+    await DouyinDB.saveConfig('maxDelay', config.maxDelay);
+    
+    const results = [true, true, true, true, true];
     
     console.log('✅ 配置保存成功', results);
   } catch (error) {
