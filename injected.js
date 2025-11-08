@@ -32,9 +32,15 @@
     if (action === 'abortDownload') {
       console.log('🛑 Injected script收到中断下载请求');
       if (currentXhr) {
-        currentXhr.abort();
+        try {
+          currentXhr.abort();
+          console.log('✅ XMLHttpRequest已中断');
+        } catch (error) {
+          console.warn('⚠️ 中断XMLHttpRequest时出错:', error.message);
+        }
         currentXhr = null;
-        console.log('✅ XMLHttpRequest已中断');
+      } else {
+        console.log('ℹ️ 没有正在进行的下载');
       }
     }
   });
@@ -758,17 +764,27 @@
         currentXhr.onabort = function() {
           console.log('🛑 XMLHttpRequest被中断');
           currentXhr = null;
-          reject(new Error('Download aborted'));
+          // 使用特殊的错误类型来标识中断
+          const abortError = new Error('Download aborted');
+          abortError.name = 'AbortError';
+          reject(abortError);
         };
         
         currentXhr.onload = function() {
+          // 保存状态信息后再清理currentXhr
+          const status = currentXhr ? currentXhr.status : null;
+          const response = currentXhr ? currentXhr.response : null;
+          const contentType = currentXhr ? currentXhr.getResponseHeader('Content-Type') : null;
+          const contentLength = currentXhr ? currentXhr.getResponseHeader('Content-Length') : null;
+          
           currentXhr = null;
-          if (currentXhr && currentXhr.status === 200) {
-            console.log('📄 Content-Type:', currentXhr.getResponseHeader('Content-Type'));
-            console.log('📄 Content-Length:', currentXhr.getResponseHeader('Content-Length'));
-            resolve(currentXhr.response);
+          
+          if (status === 200 && response) {
+            console.log('📄 Content-Type:', contentType);
+            console.log('📄 Content-Length:', contentLength);
+            resolve(response);
           } else {
-            reject(new Error(`HTTP ${currentXhr.status}: ${currentXhr.statusText}`));
+            reject(new Error(`HTTP ${status}: 下载失败`));
           }
         };
         
@@ -779,11 +795,12 @@
         
         currentXhr.onprogress = function(e) {
           // 检查是否收到中断信号
-          if (abortSignal === 'active' && Math.random() < 0.01) { // 随机检查，避免频繁检查
+          if (abortSignal === 'active') {
             console.log('🔍 检测到中断信号，准备中断下载...');
             if (currentXhr) {
               currentXhr.abort();
             }
+            return; // 直接返回，避免继续处理进度
           }
           
           if (e.lengthComputable) {
@@ -833,13 +850,15 @@
       console.log('✅ 下载触发成功');
       
     } catch (error) {
-      if (error.message === 'Download aborted') {
+      if (error.name === 'AbortError' || error.message === 'Download aborted') {
         console.log('🛑 下载被用户中断');
+        // 对于中断错误，不重新抛出，只是记录日志
+        return;
       } else {
         console.error('❌ 页面上下文下载失败:', error);
         console.error('错误详情:', error.stack);
+        throw error;
       }
-      throw error;
     } finally {
       // 确保清理currentXhr
       if (currentXhr) {

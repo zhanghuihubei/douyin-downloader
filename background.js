@@ -612,15 +612,24 @@ async function downloadVideo(videoData) {
       console.warn('⚠️ Content script下载失败，使用备用方案');
       return await downloadViaChrome(videoUrl, filename, currentDownloadController);
     }
-  } catch (error) {
-    if (error.name === 'AbortError') {
-      console.log('🛑 下载被中断:', videoData.title);
-      throw error;
-    }
-    console.error('❌ 委托下载失败:', error);
-    // 如果委托失败，使用chrome.downloads直接下载
-    return await downloadViaChrome(videoUrl, filename, currentDownloadController);
-  } finally {
+    } catch (error) {
+      if (error.name === 'AbortError') {
+        console.log('🛑 下载被中断:', videoData.title);
+        throw error;
+      }
+      
+      // 检查是否是用户停止下载的错误
+      if (error.message && error.message.includes('Download stopped by user')) {
+        console.log('🛑 用户停止下载:', videoData.title);
+        const stopError = new Error('Download stopped by user');
+        stopError.name = 'AbortError';
+        throw stopError;
+      }
+      
+      console.error('❌ 委托下载失败:', error);
+      // 如果委托失败，使用chrome.downloads直接下载
+      return await downloadViaChrome(videoUrl, filename, currentDownloadController);
+    } finally {
     // 下载完成后清理控制器
     if (currentDownloadController) {
       currentDownloadController = null;
