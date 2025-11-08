@@ -12,6 +12,7 @@ let isDownloading = false;
 let stopDownload = false; // 停止下载标志
 let currentDownloadController = null; // 当前下载的控制器
 let downloadIdToVideo = new Map(); // downloadId -> video 映射
+let inFlightDownloads = new Map(); // 跟踪正在进行的下载 downloadId -> {controller, startTime}
 let config = {
   autoDownload: true,
   checkInterval: 3600000, // 1小时检查一次
@@ -235,14 +236,28 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         if (isDownloading) {
           console.log('🔄 切换到暂停状态，正在下载中，立即停止下载');
           stopDownload = true;
-          
+
+          // 中断所有正在进行的下载控制器
+          console.log(`🛑 暂停时中断所有 ${inFlightDownloads.size} 个正在进行的下载...`);
+          for (const [downloadId, downloadInfo] of inFlightDownloads.entries()) {
+            try {
+              if (downloadInfo.controller) {
+                downloadInfo.controller.abort();
+                console.log(`✅ 下载ID ${downloadId} 控制器已中断`);
+              }
+            } catch (error) {
+              console.log(`⚠️ 中断下载ID ${downloadId} 时出错:`, error.message);
+            }
+          }
+          inFlightDownloads.clear();
+
           // 中断当前正在进行的下载
           if (currentDownloadController) {
             console.log('🛑 暂停时中断当前下载...');
             currentDownloadController.abort();
             currentDownloadController = null;
           }
-          
+
           // 通知所有抖音标签页中断下载
           const tabs = await chrome.tabs.query({ url: 'https://www.douyin.com/*' });
           for (const tab of tabs) {
@@ -252,9 +267,9 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
               console.log('标签页', tab.id, '发送中断消息失败:', error.message);
             }
           }
-          
+
           isDownloading = false;
-          
+
           // 延迟重置stopDownload标志
           setTimeout(() => {
             stopDownload = false;
@@ -418,6 +433,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       console.log('🛑 收到停止下载指令，当前状态:', {
         isDownloading,
         queueLength: downloadQueue.length,
+        inFlightCount: inFlightDownloads.size,
         hasController: !!currentDownloadController
       });
       
@@ -433,7 +449,22 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       downloadQueue = [];
       console.log(`🗑️ 已清空下载队列，移除了 ${clearedCount} 个待下载视频`);
       
-      // 如果有正在进行的下载，立即中断它
+      // 中断所有正在进行的下载控制器
+      console.log(`🛑 中断所有 ${inFlightDownloads.size} 个正在进行的下载...`);
+      for (const [downloadId, downloadInfo] of inFlightDownloads.entries()) {
+        try {
+          if (downloadInfo.controller) {
+            downloadInfo.controller.abort();
+            console.log(`✅ 下载ID ${downloadId} 控制器已中断`);
+          }
+        } catch (error) {
+          console.log(`⚠️ 中断下载ID ${downloadId} 时出错:`, error.message);
+        }
+      }
+      inFlightDownloads.clear();
+      console.log('🗑️ 已清空所有正在进行的下载跟踪');
+      
+      // 如果有当前正在进行的下载，立即中断它
       if (currentDownloadController) {
         console.log('🛑 立即中断当前下载控制器...');
         try {
@@ -479,6 +510,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         success: true, 
         clearedCount,
         wasDownloading,
+        inFlightCount: inFlightDownloads.size,
         message: wasDownloading 
           ? `已停止下载并清空队列，移除了 ${clearedCount} 个待下载视频`
           : `已清空队列，移除了 ${clearedCount} 个待下载视频`
@@ -637,11 +669,21 @@ async function downloadVideo(videoData) {
   
   // 创建新的下载控制器
   currentDownloadController = new AbortController();
+  const downloadId = Date.now() + Math.random(); // 唯一的下载ID
+  
+  // 在inFlightDownloads中跟踪这次下载
+  inFlightDownloads.set(downloadId, {
+    controller: currentDownloadController,
+    startTime: Date.now(),
+    video: videoData
+  });
+  console.log(`📍 开始跟踪下载ID ${downloadId}，当前进行中的下载: ${inFlightDownloads.size}`);
   
   // 再次检查停止标志（防止在创建控制器期间收到停止指令）
   if (stopDownload) {
     console.log('🛑 控制器创建后检测到停止标志，立即中断:', videoData.title);
     currentDownloadController.abort();
+    inFlightDownloads.delete(downloadId);
     currentDownloadController = null;
     const error = new Error('Download stopped by user');
     error.name = 'AbortError';
@@ -651,6 +693,7 @@ async function downloadVideo(videoData) {
   const { videoUrl, title, author, awemeId } = videoData;
   
   if (!videoUrl) {
+    inFlightDownloads.delete(downloadId);
     throw new Error('视频URL为空');
   }
   
@@ -669,7 +712,7 @@ async function downloadVideo(videoData) {
     const tabs = await chrome.tabs.query({ url: 'https://www.douyin.com/*' });
     if (tabs.length === 0) {
       console.warn('⚠️ 没有找到抖音标签页，使用直接下载');
-      return await downloadViaChrome(videoUrl, filename, currentDownloadController);
+      return await downloadViaChrome(videoUrl, filename, currentDownloadController, downloadId);
     }
     
     // 使用第一个抖音标签页
@@ -683,7 +726,7 @@ async function downloadVideo(videoData) {
       videoUrl: videoUrl,
       filename: filename,
       abortSignal: currentDownloadController.signal.aborted ? 'active' : 'inactive',
-      downloadId: Date.now() // 用于标识这次下载请求
+      downloadId: downloadId // 用于标识这次下载请求
     });
     
     if (response && response.success) {
@@ -697,12 +740,14 @@ async function downloadVideo(videoData) {
         downloaded: videoData.title,
         remaining: downloadQueue.length
       }).catch(() => {});
-      return 'content-script-' + Date.now(); // 返回虚拟downloadId
+      inFlightDownloads.delete(downloadId);
+      return 'content-script-' + downloadId; // 返回虚拟downloadId
     } else {
       console.warn('⚠️ Content script下载失败，使用备用方案');
-      return await downloadViaChrome(videoUrl, filename, currentDownloadController);
+      return await downloadViaChrome(videoUrl, filename, currentDownloadController, downloadId);
     }
     } catch (error) {
+      inFlightDownloads.delete(downloadId);
       if (error.name === 'AbortError') {
         console.log('🛑 下载被中断:', videoData.title);
         throw error;
@@ -718,7 +763,7 @@ async function downloadVideo(videoData) {
       
       console.error('❌ 委托下载失败:', error);
       // 如果委托失败，使用chrome.downloads直接下载
-      return await downloadViaChrome(videoUrl, filename, currentDownloadController);
+      return await downloadViaChrome(videoUrl, filename, currentDownloadController, downloadId);
     } finally {
     // 下载完成后清理控制器
     if (currentDownloadController) {
@@ -728,7 +773,7 @@ async function downloadVideo(videoData) {
 }
 
 // 直接使用Chrome下载API（备用方案）
-async function downloadViaChrome(videoUrl, filename, abortController) {
+async function downloadViaChrome(videoUrl, filename, abortController, downloadId) {
   console.log('使用Chrome Downloads API直接下载...');
   
   // 检查是否已被中断
@@ -741,6 +786,9 @@ async function downloadViaChrome(videoUrl, filename, abortController) {
     if (abortController) {
       const handleAbort = () => {
         console.log('🛑 Chrome下载被中断');
+        if (downloadId) {
+          inFlightDownloads.delete(downloadId);
+        }
         reject(new Error('Download aborted'));
       };
       abortController.signal.addEventListener('abort', handleAbort);
@@ -750,13 +798,16 @@ async function downloadViaChrome(videoUrl, filename, abortController) {
       url: videoUrl,
       filename: `抖音视频/${filename}`,
       saveAs: false
-    }, (downloadId) => {
+    }, (downloadId_chrome) => {
       if (chrome.runtime.lastError) {
         console.error('下载API错误:', chrome.runtime.lastError.message);
+        if (downloadId) {
+          inFlightDownloads.delete(downloadId);
+        }
         reject(new Error(chrome.runtime.lastError.message));
       } else {
-        console.log('✅ 下载已开始，ID:', downloadId);
-        resolve(downloadId);
+        console.log('✅ 下载已开始，ID:', downloadId_chrome);
+        resolve(downloadId_chrome);
       }
     });
   });
