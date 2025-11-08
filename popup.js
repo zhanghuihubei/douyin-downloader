@@ -1,5 +1,15 @@
 // Popup UI 控制脚本
 
+// 检查标签页是否有可用的content script
+async function isContentScriptReady(tabId) {
+  try {
+    await chrome.tabs.sendMessage(tabId, { action: 'ping' });
+    return true;
+  } catch (error) {
+    return false;
+  }
+}
+
 document.addEventListener('DOMContentLoaded', async () => {
   // 初始化UI
   await updateStatus();
@@ -105,12 +115,29 @@ async function scanNow() {
     }
     
     // 发送扫描消息到所有抖音标签页
+    let successCount = 0;
     for (const tab of tabs) {
-      try {
-        await chrome.tabs.sendMessage(tab.id, { action: 'scanFollowing' });
-      } catch (error) {
-        console.error('发送消息失败:', error);
+      // 先检查content script是否已就绪
+      const ready = await isContentScriptReady(tab.id);
+      if (ready) {
+        try {
+          await chrome.tabs.sendMessage(tab.id, { action: 'scanFollowing' });
+          successCount++;
+        } catch (error) {
+          console.log('标签页', tab.id, '发送消息失败（已重试）:', error.message);
+        }
+      } else {
+        console.log('标签页', tab.id, 'content script未就绪，跳过');
       }
+    }
+    
+    // 如果没有任何标签页成功，提示用户
+    if (successCount === 0) {
+      alert('无法连接到抖音页面，请刷新页面后重试');
+      button.disabled = false;
+      button.textContent = '🔍 立即扫描关注列表';
+      hideLoading();
+      return;
     }
     
     // 等待一段时间后恢复按钮
