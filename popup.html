@@ -1,0 +1,288 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>抖音视频下载器</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+    
+    body {
+      width: 400px;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: #333;
+    }
+    
+    .container {
+      background: white;
+      border-radius: 12px;
+      margin: 0;
+      overflow: hidden;
+    }
+    
+    .header {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      padding: 20px;
+      text-align: center;
+    }
+    
+    .header h1 {
+      font-size: 20px;
+      margin-bottom: 8px;
+    }
+    
+    .header p {
+      font-size: 13px;
+      opacity: 0.9;
+    }
+    
+    .content {
+      padding: 20px;
+    }
+    
+    .status-card {
+      background: #f8f9fa;
+      border-radius: 8px;
+      padding: 15px;
+      margin-bottom: 15px;
+    }
+    
+    .status-item {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 10px;
+      font-size: 14px;
+    }
+    
+    .status-item:last-child {
+      margin-bottom: 0;
+    }
+    
+    .status-label {
+      color: #666;
+    }
+    
+    .status-value {
+      font-weight: bold;
+      color: #667eea;
+    }
+    
+    .status-value.active {
+      color: #28a745;
+    }
+    
+    .status-value.inactive {
+      color: #dc3545;
+    }
+    
+    .button-group {
+      display: grid;
+      gap: 10px;
+      margin-bottom: 15px;
+    }
+    
+    .btn {
+      padding: 12px 20px;
+      border: none;
+      border-radius: 8px;
+      font-size: 14px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.3s ease;
+      text-align: center;
+    }
+    
+    .btn:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    }
+    
+    .btn:active {
+      transform: translateY(0);
+    }
+    
+    .btn-primary {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+    }
+    
+    .btn-success {
+      background: #28a745;
+      color: white;
+    }
+    
+    .btn-danger {
+      background: #dc3545;
+      color: white;
+    }
+    
+    .btn-secondary {
+      background: #6c757d;
+      color: white;
+    }
+    
+    .btn:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+    
+    .settings {
+      margin-top: 15px;
+      padding-top: 15px;
+      border-top: 1px solid #e0e0e0;
+    }
+    
+    .setting-item {
+      margin-bottom: 15px;
+    }
+    
+    .setting-item label {
+      display: block;
+      font-size: 14px;
+      color: #666;
+      margin-bottom: 8px;
+    }
+    
+    .setting-item select {
+      width: 100%;
+      padding: 8px 12px;
+      border: 1px solid #ddd;
+      border-radius: 6px;
+      font-size: 14px;
+      background: white;
+      cursor: pointer;
+    }
+    
+    .info-box {
+      background: #e7f3ff;
+      border-left: 4px solid #667eea;
+      padding: 12px;
+      border-radius: 4px;
+      font-size: 13px;
+      color: #0066cc;
+      margin-top: 15px;
+    }
+    
+    .loading {
+      display: none;
+      text-align: center;
+      padding: 20px;
+    }
+    
+    .spinner {
+      border: 3px solid #f3f3f3;
+      border-top: 3px solid #667eea;
+      border-radius: 50%;
+      width: 40px;
+      height: 40px;
+      animation: spin 1s linear infinite;
+      margin: 0 auto 10px;
+    }
+    
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+    
+    .footer {
+      text-align: center;
+      padding: 15px;
+      font-size: 12px;
+      color: #999;
+      background: #f8f9fa;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h1>🎬 抖音视频下载器</h1>
+      <p>自动下载关注用户的最新视频</p>
+    </div>
+    
+    <div class="content">
+      <div class="status-card">
+        <div class="status-item">
+          <span class="status-label">自动下载:</span>
+          <span class="status-value" id="autoStatus">检查中...</span>
+        </div>
+        <div class="status-item">
+          <span class="status-label">下载队列:</span>
+          <span class="status-value" id="queueLength">0</span>
+        </div>
+        <div class="status-item">
+          <span class="status-label">已下载:</span>
+          <span class="status-value" id="downloadedCount">0</span>
+        </div>
+        <div class="status-item">
+          <span class="status-label">上次检查:</span>
+          <span class="status-value" id="lastCheck">从未</span>
+        </div>
+      </div>
+      
+      </div>
+      
+      <div class="button-group">
+        <button class="btn btn-primary" id="scanNow">
+          🔍 立即扫描关注列表
+        </button>
+        <button class="btn" id="toggleAuto">
+          ⏸️ 切换自动下载
+        </button>
+        <button class="btn btn-secondary" id="openManage">
+          📊 管理用户和视频
+        </button>
+        <button class="btn btn-secondary" id="openDouyin">
+          🔗 打开抖音网页
+        </button>
+      </div>
+      
+      <!-- 停止按钮放在单独的区域，始终可见 -->
+      <div class="stop-button-container" id="stopButtonContainer" style="display: none; text-align: center; margin: 15px 0;">
+        <button class="btn btn-danger" id="stopDownload">
+          🛑 停止下载
+        </button>
+      </div>
+      
+      <div class="settings">
+        <div class="setting-item">
+          <label for="checkInterval">检查间隔:</label>
+          <select id="checkInterval">
+            <option value="1800000">30分钟</option>
+            <option value="3600000" selected>1小时</option>
+            <option value="7200000">2小时</option>
+            <option value="14400000">4小时</option>
+            <option value="28800000">8小时</option>
+            <option value="86400000">24小时</option>
+          </select>
+        </div>
+      </div>
+      
+      <div class="info-box">
+        💡 <strong>使用说明:</strong><br>
+        1. 点击"打开抖音网页"并登录你的账号<br>
+        2. 点击"立即扫描"开始扫描关注列表<br>
+        3. 插件会自动下载新视频到"抖音视频"文件夹
+      </div>
+    </div>
+    
+    <div class="loading" id="loading">
+      <div class="spinner"></div>
+      <p>正在处理中...</p>
+    </div>
+    
+    <div class="footer">
+      完全本地运行 · 无需远程服务器
+    </div>
+  </div>
+  
+  <script src="popup.js"></script>
+</body>
+</html>

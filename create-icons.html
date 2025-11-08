@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>生成插件图标</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      padding: 20px;
+      text-align: center;
+    }
+    canvas {
+      border: 1px solid #ddd;
+      margin: 10px;
+    }
+    button {
+      margin: 10px;
+      padding: 10px 20px;
+      font-size: 16px;
+      cursor: pointer;
+      background: #667eea;
+      color: white;
+      border: none;
+      border-radius: 5px;
+    }
+    button:hover {
+      background: #764ba2;
+    }
+  </style>
+</head>
+<body>
+  <h1>插件图标生成器</h1>
+  <p>点击下载按钮保存图标文件</p>
+  
+  <div>
+    <canvas id="icon16" width="16" height="16"></canvas>
+    <canvas id="icon48" width="48" height="48"></canvas>
+    <canvas id="icon128" width="128" height="128"></canvas>
+  </div>
+  
+  <div>
+    <button onclick="downloadIcon('icon16', 'icon16.png')">下载 16x16</button>
+    <button onclick="downloadIcon('icon48', 'icon48.png')">下载 48x48</button>
+    <button onclick="downloadIcon('icon128', 'icon128.png')">下载 128x128</button>
+    <button onclick="downloadAll()">下载全部</button>
+  </div>
+  
+  <script>
+    // 绘制图标
+    function drawIcon(canvasId, size) {
+      const canvas = document.getElementById(canvasId);
+      const ctx = canvas.getContext('2d');
+      
+      // 背景渐变
+      const gradient = ctx.createLinearGradient(0, 0, size, size);
+      gradient.addColorStop(0, '#667eea');
+      gradient.addColorStop(1, '#764ba2');
+      ctx.fillStyle = gradient;
+      ctx.fillRect(0, 0, size, size);
+      
+      // 绘制播放按钮
+      ctx.fillStyle = 'white';
+      const centerX = size / 2;
+      const centerY = size / 2;
+      const triangleSize = size * 0.3;
+      
+      ctx.beginPath();
+      ctx.moveTo(centerX - triangleSize * 0.3, centerY - triangleSize * 0.5);
+      ctx.lineTo(centerX - triangleSize * 0.3, centerY + triangleSize * 0.5);
+      ctx.lineTo(centerX + triangleSize * 0.5, centerY);
+      ctx.closePath();
+      ctx.fill();
+      
+      // 绘制圆圈
+      ctx.strokeStyle = 'white';
+      ctx.lineWidth = size * 0.08;
+      ctx.beginPath();
+      ctx.arc(centerX, centerY, size * 0.35, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+    
+    // 初始化绘制所有图标
+    drawIcon('icon16', 16);
+    drawIcon('icon48', 48);
+    drawIcon('icon128', 128);
+    
+    // 下载图标
+    function downloadIcon(canvasId, filename) {
+      const canvas = document.getElementById(canvasId);
+      const link = document.createElement('a');
+      link.download = filename;
+      link.href = canvas.toDataURL('image/png');
+      link.click();
+    }
+    
+    // 下载全部
+    function downloadAll() {
+      setTimeout(() => downloadIcon('icon16', 'icon16.png'), 0);
+      setTimeout(() => downloadIcon('icon48', 'icon48.png'), 500);
+      setTimeout(() => downloadIcon('icon128', 'icon128.png'), 1000);
+      alert('请保存三个图标文件到插件目录！');
+    }
+  </script>
+</body>
+</html>
