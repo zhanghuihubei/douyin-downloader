@@ -639,6 +639,14 @@ async function getStats() {
  * 保存配置项
  */
 async function saveConfig(key, value) {
+  if (key === undefined) {
+    console.error('❌ saveConfig 调用参数无效: key为undefined', {
+      value,
+      stack: new Error().stack
+    });
+    throw new Error('Config key must be a non-empty string (received: undefined)');
+  }
+  
   const normalizedKey = key != null ? String(key).trim() : '';
   if (!normalizedKey) {
     console.error('❌ saveConfig 调用参数无效:', {
