@@ -841,14 +841,18 @@
         };
         
         currentXhr.onload = function() {
-          // 保存状态信息后再清理currentXhr
-          const status = currentXhr ? currentXhr.status : null;
-          const response = currentXhr ? currentXhr.response : null;
-          const contentType = currentXhr ? currentXhr.getResponseHeader('Content-Type') : null;
-          const contentLength = currentXhr ? currentXhr.getResponseHeader('Content-Length') : null;
+          // 保存当前XHR引用，避免在清理过程中被修改
+          const xhr = currentXhr;
           
+          // 清理currentXhr和currentDownloadId
           currentXhr = null;
           currentDownloadId = null;
+          
+          // 从保存的XHR引用中获取状态信息
+          const status = xhr ? xhr.status : null;
+          const response = xhr ? xhr.response : null;
+          const contentType = xhr ? xhr.getResponseHeader('Content-Type') : null;
+          const contentLength = xhr ? xhr.getResponseHeader('Content-Length') : null;
           
           if (status === 200 && response) {
             console.log('📄 Content-Type:', contentType);
