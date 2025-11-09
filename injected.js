@@ -9,6 +9,7 @@
   let currentXhr = null;
   let currentDownloadId = null; // 跟踪当前下载的ID
   let pendingAbortIds = new Set(); // 待中断的下载ID
+  let shouldStopFetching = false; // 标志：是否应该停止获取视频列表
   
   // 监听来自content script的消息
   window.addEventListener('message', async (event) => {
@@ -36,6 +37,10 @@
       console.log('🛑 Injected script收到中断下载请求');
       console.log('⏰ 中断时间戳:', event.data.timestamp || 'none');
       console.log('🆔 当前下载ID:', currentDownloadId || 'none');
+      
+      // 设置停止获取标志，中断视频列表获取
+      shouldStopFetching = true;
+      console.log('🚫 已设置停止获取视频列表标志');
       
       // 获取需要中断的所有ID列表
       const downloadIds = event.data.downloadIds || [];
@@ -87,6 +92,9 @@
   
   // 获取当前用户的关注列表
   async function getFollowingList() {
+    // 开始新的获取任务时，重置停止标志
+    shouldStopFetching = false;
+    
     try {
       // 尝试从页面获取当前用户ID
       const userInfo = await getCurrentUserInfo();
@@ -101,6 +109,12 @@
       let hasMore = true;
       
       while (hasMore) {
+        // 检查是否需要停止获取
+        if (shouldStopFetching) {
+          console.log('🛑 检测到停止获取标志，中断关注列表获取');
+          break;
+        }
+        
         // 使用正确的API端点
         const apiUrl = `https://www-hj.douyin.com/aweme/v1/web/user/following/list/?device_platform=webapp&aid=6383&channel=channel_pc_web&user_id=${userInfo.uid}&sec_user_id=${userInfo.sec_uid}&offset=${cursor}&min_time=0&max_time=0&count=20&source_type=4&gps_access=0&address_book_access=0&is_top=1`;
         
@@ -145,7 +159,15 @@
           // 避免请求过快 - 随机等待2-4秒
           const delay = getRandomDelay(2000, 4000);
           console.log(`⏱️ 等待 ${(delay/1000).toFixed(1)} 秒后继续获取...`);
-          await sleep(delay);
+          try {
+            await interruptibleSleep(delay);
+          } catch (error) {
+            if (error.message.includes('interrupted')) {
+              console.log('🛑 等待期间收到停止信号，中断获取');
+              break;
+            }
+            throw error;
+          }
         }
       }
       
@@ -172,6 +194,10 @@
   async function getUserVideos(userId) {
     console.log('=== 获取用户视频 ===');
     console.log('用户ID(sec_uid):', userId);
+    
+    // 开始新的获取任务时，重置停止标志
+    shouldStopFetching = false;
+    
     try {
       const allVideos = [];
       let cursor = 0;
@@ -182,6 +208,12 @@
       const maxRetries = 3;
       
       while (hasMore && count < maxVideos) {
+        // 检查是否需要停止获取
+        if (shouldStopFetching) {
+          console.log('🛑 检测到停止获取标志，中断视频列表获取');
+          break;
+        }
+        
         // 获取页面参数
         const params = getPageParams();
         
@@ -196,6 +228,12 @@
         
         // 重试逻辑
         while (attempt < maxAttempts) {
+          // 检查是否需要停止
+          if (shouldStopFetching) {
+            console.log('🛑 API请求前检测到停止标志');
+            break;
+          }
+          
           try {
             attempt++;
             console.log(`尝试 ${attempt}/${maxAttempts} 请求API...`);
@@ -219,7 +257,12 @@
               if (attempt < maxAttempts) {
                 const retryDelay = getRandomDelay(1000, 3000);
                 console.log(`⏱️ 等待 ${retryDelay}ms 后重试...`);
-                await sleep(retryDelay);
+                try {
+                  await interruptibleSleep(retryDelay);
+                } catch (sleepError) {
+                  console.log('🛑 重试等待被中断');
+                  break; // 退出重试循环
+                }
               }
             }
           } catch (fetchError) {
@@ -227,7 +270,12 @@
             if (attempt < maxAttempts) {
               const retryDelay = getRandomDelay(2000, 5000);
               console.log(`⏱️ 等待 ${retryDelay}ms 后重试...`);
-              await sleep(retryDelay);
+              try {
+                await interruptibleSleep(retryDelay);
+              } catch (sleepError) {
+                console.log('🛑 重试等待被中断');
+                break; // 退出重试循环
+              }
             }
           }
         }
@@ -298,7 +346,15 @@
         if (hasMore) {
           const delay = getRandomDelay(2000, 4000);
           console.log(`⏱️ 等待 ${(delay/1000).toFixed(1)} 秒后继续获取...`);
-          await sleep(delay);
+          try {
+            await interruptibleSleep(delay);
+          } catch (error) {
+            if (error.message.includes('interrupted')) {
+              console.log('🛑 等待期间收到停止信号，中断获取');
+              break;
+            }
+            throw error;
+          }
         }
       }
       
@@ -768,6 +824,31 @@
   
   function sleep(ms) {
     return new Promise(resolve => setTimeout(resolve, ms));
+  }
+  
+  // 可中断的sleep函数，每100ms检查一次停止标志
+  function interruptibleSleep(ms) {
+    return new Promise((resolve, reject) => {
+      const startTime = Date.now();
+      const checkInterval = 100; // 每100ms检查一次
+      
+      const check = () => {
+        if (shouldStopFetching) {
+          console.log('⏸️ Sleep被中断');
+          reject(new Error('Sleep interrupted by stop signal'));
+          return;
+        }
+        
+        const elapsed = Date.now() - startTime;
+        if (elapsed >= ms) {
+          resolve();
+        } else {
+          setTimeout(check, Math.min(checkInterval, ms - elapsed));
+        }
+      };
+      
+      setTimeout(check, checkInterval);
+    });
   }
   
   // 获取随机延迟时间
