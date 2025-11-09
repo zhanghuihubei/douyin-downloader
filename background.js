@@ -258,6 +258,12 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
           console.log(`🛑 暂停时中断所有 ${inFlightDownloads.size} 个正在进行的下载...`);
           for (const [downloadId, downloadInfo] of inFlightDownloads.entries()) {
             try {
+              // 取消延迟标记的timeout
+              if (downloadInfo.markTimeout) {
+                clearTimeout(downloadInfo.markTimeout);
+                console.log(`⏰ 暂停时已取消下载ID ${downloadId} 的延迟标记`);
+              }
+              
               if (downloadInfo.controller) {
                 downloadInfo.controller.abort();
                 console.log(`✅ 下载ID ${downloadId} 控制器已中断`);
@@ -481,10 +487,17 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       await Promise.allSettled(abortPromises);
       console.log('📢 所有标签页中断消息发送完成');
 
-      // 中断所有正在进行的下载控制器
+      // 中断所有正在进行的下载控制器和取消延迟标记
       console.log(`🛑 中断所有 ${inFlightDownloads.size} 个正在进行的下载...`);
       for (const [downloadId, downloadInfo] of inFlightDownloads.entries()) {
         try {
+          // 取消延迟标记的timeout
+          if (downloadInfo.markTimeout) {
+            clearTimeout(downloadInfo.markTimeout);
+            console.log(`⏰ 已取消下载ID ${downloadId} 的延迟标记`);
+          }
+          
+          // 中断下载控制器
           if (downloadInfo.controller) {
             downloadInfo.controller.abort();
             console.log(`✅ 下载ID ${downloadId} 控制器已中断`);
@@ -743,16 +756,38 @@ async function downloadVideo(videoData) {
     });
     
     if (response && response.success) {
-      console.log('✅ Content script下载成功');
-      // 对于content script下载，立即标记为已下载，因为它直接处理
-      const filename_final = `${sanitizeFilename(videoData.author)}_${sanitizeFilename(videoData.title)}_${videoData.awemeId}.mp4`;
-      await DouyinDB.markVideoAsDownloaded(videoData.awemeId, filename_final);
-      // 通知popup更新状态
-      chrome.runtime.sendMessage({
-        action: 'downloadProgress',
-        downloaded: videoData.title,
-        remaining: downloadQueue.length
-      }).catch(() => {});
+      console.log('✅ Content script下载请求已发送');
+      // 注意：这里不立即标记为已下载，因为content script返回success只表示下载请求已发送
+      // 我们需要等待文件真正保存完成后再标记，但由于blob下载的限制，我们采用延迟标记的策略
+      // 延迟5秒后标记为已下载，给浏览器足够时间保存文件
+      const markDownloadTimeout = setTimeout(async () => {
+        try {
+          // 再次检查是否已被中断（防止在延迟期间收到停止指令）
+          if (stopDownload) {
+            console.log('🛑 检测到停止标志，取消延迟标记:', videoData.title);
+            return;
+          }
+          
+          const filename_final = `${sanitizeFilename(videoData.author)}_${sanitizeFilename(videoData.title)}_${videoData.awemeId}.mp4`;
+          await DouyinDB.markVideoAsDownloaded(videoData.awemeId, filename_final);
+          console.log('✅ 延迟标记视频为已下载:', videoData.title);
+          // 通知popup更新状态
+          chrome.runtime.sendMessage({
+            action: 'downloadProgress',
+            downloaded: videoData.title,
+            remaining: downloadQueue.length
+          }).catch(() => {});
+        } catch (error) {
+          console.error('❌ 延迟标记下载失败:', error);
+        }
+      }, 5000); // 延迟5秒
+      
+      // 存储timeout ID，以便在停止下载时能够取消
+      const downloadInfo = inFlightDownloads.get(downloadId);
+      if (downloadInfo) {
+        downloadInfo.markTimeout = markDownloadTimeout;
+      }
+      
       inFlightDownloads.delete(downloadId);
       return 'content-script-' + downloadId; // 返回虚拟downloadId
     } else {
@@ -760,7 +795,17 @@ async function downloadVideo(videoData) {
       return await downloadViaChrome(videoUrl, filename, currentDownloadController, downloadId);
     }
     } catch (error) {
+      // 在清理前先获取下载信息，用于取消延迟标记
+      const downloadInfo = inFlightDownloads.get(downloadId);
+      
       inFlightDownloads.delete(downloadId);
+      
+      // 取消延迟标记的timeout
+      if (downloadInfo && downloadInfo.markTimeout) {
+        clearTimeout(downloadInfo.markTimeout);
+        console.log(`⏰ 错误处理中已取消下载ID ${downloadId} 的延迟标记`);
+      }
+      
       if (error.name === 'AbortError') {
         console.log('🛑 下载被中断:', videoData.title);
         throw error;
