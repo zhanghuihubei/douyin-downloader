@@ -104,6 +104,9 @@
       
       console.log('当前用户:', userInfo.nickname, 'uid:', userInfo.uid, 'sec_uid:', userInfo.sec_uid);
       
+      // 开始新的扫描任务时，重置停止标志
+      shouldStopFetching = false;
+      
       const allFollowing = [];
       let cursor = 0;
       let hasMore = true;
@@ -194,9 +197,6 @@
   async function getUserVideos(userId) {
     console.log('=== 获取用户视频 ===');
     console.log('用户ID(sec_uid):', userId);
-    
-    // 开始新的获取任务时，重置停止标志
-    shouldStopFetching = false;
     
     try {
       const allVideos = [];
