@@ -145,14 +145,16 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
           downloadId: 'injected-' + downloadId,
           aborted: true
         };
-        console.log('📤 发送中止响应给background:', response);
+        console.log('📤 发送中止响应给background:', JSON.stringify(response, null, 2));
+        console.log('📤 中止响应详情 - success:', response.success, 'aborted:', response.aborted, 'downloadId:', response.downloadId);
         sendResponse(response);
       } else {
         const response = { 
           success: true, 
           downloadId: 'injected-' + downloadId
         };
-        console.log('📤 发送成功响应给background:', response);
+        console.log('📤 发送成功响应给background:', JSON.stringify(response, null, 2));
+        console.log('📤 成功响应详情 - success:', response.success, 'aborted:', response.aborted, 'downloadId:', response.downloadId);
         sendResponse(response);
       }
     }).catch((error) => {
