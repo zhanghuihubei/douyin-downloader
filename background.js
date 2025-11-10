@@ -519,8 +519,13 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
           console.log(`⚠️ 中断下载ID ${downloadId} 时出错:`, error.message);
         }
       }
-      inFlightDownloads.clear();
-      console.log('🗑️ 已清空所有正在进行的下载跟踪');
+      
+      // 延迟清理inFlightDownloads，给正在进行的响应一些时间到达
+      console.log('⏰ 延迟1秒后清理inFlightDownloads...');
+      setTimeout(() => {
+        inFlightDownloads.clear();
+        console.log('🗑️ 已清空所有正在进行的下载跟踪');
+      }, 1000);
       
       // 如果有当前正在进行的下载，立即中断它
       if (currentDownloadController) {
@@ -800,15 +805,54 @@ async function downloadVideo(videoData) {
       downloadInfo.markTimeout = markDownloadTimeout;
     }
     
-    const response = await chrome.tabs.sendMessage(tab.id, {
-      action: 'downloadVideoInPage',
-      videoUrl: videoUrl,
-      filename: filename,
-      abortSignal: currentDownloadController.signal.aborted ? 'active' : 'inactive',
-      downloadId: downloadId // 用于标识这次下载请求
-    });
+    let response;
+    console.log('🔍 准备发送消息到标签页', tab.id, 'downloadId:', downloadId);
+    console.log('🔍 当前控制器状态:', currentDownloadController ? '存在' : '不存在');
+    console.log('🔍 控制器aborted状态:', currentDownloadController ? currentDownloadController.signal.aborted : 'N/A');
+    console.log('🔍 stopDownload状态:', stopDownload);
+    
+    try {
+      response = await chrome.tabs.sendMessage(tab.id, {
+        action: 'downloadVideoInPage',
+        videoUrl: videoUrl,
+        filename: filename,
+        abortSignal: currentDownloadController.signal.aborted ? 'active' : 'inactive',
+        downloadId: downloadId // 用于标识这次下载请求
+      });
+      console.log('🔍 chrome.tabs.sendMessage成功完成');
+      console.log('🔍 实际收到的响应:', response);
+    } catch (messageError) {
+      console.error('❌ chrome.tabs.sendMessage出错:', messageError);
+      console.error('❌ 错误详情:', messageError.message);
+      console.error('❌ 错误堆栈:', messageError.stack);
+      
+      // 检查是否是因为控制器被中止导致的错误
+      if (messageError.message.includes('Receiving end does not exist') || 
+          messageError.message.includes('The message port closed') ||
+          stopDownload === true) {
+        console.log('🛑 检测到下载被中止或连接关闭，模拟中止响应');
+        response = { success: true, aborted: true, downloadId: downloadId };
+      } else {
+        response = null;
+      }
+    }
     
     console.log('🔍 收到content script响应:', response);
+    console.log('🔍 响应类型:', typeof response);
+    console.log('🔍 响应是否为null:', response === null);
+    console.log('🔍 响应是否为undefined:', response === undefined);
+    if (response) {
+      console.log('🔍 响应属性:', Object.keys(response));
+      console.log('🔍 response.success:', response.success);
+      console.log('🔍 response.aborted:', response.aborted);
+      console.log('🔍 response.downloadId:', response.downloadId);
+    }
+    
+    // 检查是否在等待响应期间收到了停止信号
+    if (stopDownload === true) {
+      console.log('🛑 检测到stopDownload标志为true，将下载视为被中止');
+      response = { success: true, aborted: true, downloadId: downloadId };
+    }
     
     if (response && response.success) {
       console.log('✅ Content script下载请求已发送');
