@@ -765,12 +765,16 @@ async function downloadVideo(videoData) {
           // 再次检查是否已被中断（防止在延迟期间收到停止指令）
           if (stopDownload) {
             console.log('🛑 检测到停止标志，取消延迟标记:', videoData.title);
+            // 延迟标记被取消，从inFlightDownloads中删除
+            inFlightDownloads.delete(downloadId);
             return;
           }
-          
+
           const filename_final = `${sanitizeFilename(videoData.author)}_${sanitizeFilename(videoData.title)}_${videoData.awemeId}.mp4`;
           await DouyinDB.markVideoAsDownloaded(videoData.awemeId, filename_final);
           console.log('✅ 延迟标记视频为已下载:', videoData.title);
+          // 标记完成后从inFlightDownloads中删除
+          inFlightDownloads.delete(downloadId);
           // 通知popup更新状态
           chrome.runtime.sendMessage({
             action: 'downloadProgress',
@@ -779,16 +783,19 @@ async function downloadVideo(videoData) {
           }).catch(() => {});
         } catch (error) {
           console.error('❌ 延迟标记下载失败:', error);
+          // 错误时也清理
+          inFlightDownloads.delete(downloadId);
         }
       }, 5000); // 延迟5秒
-      
+
       // 存储timeout ID，以便在停止下载时能够取消
       const downloadInfo = inFlightDownloads.get(downloadId);
       if (downloadInfo) {
         downloadInfo.markTimeout = markDownloadTimeout;
       }
-      
-      inFlightDownloads.delete(downloadId);
+
+      // 不在这里删除！保持downloadId在inFlightDownloads中，直到延迟标记完成
+      // 这样当用户在下载进行中停止时，能够找到这个downloadId
       return 'content-script-' + downloadId; // 返回虚拟downloadId
     } else {
       console.warn('⚠️ Content script下载失败，使用备用方案');
