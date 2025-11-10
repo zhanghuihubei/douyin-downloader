@@ -140,24 +140,30 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       
       // 如果是中止状态，返回不同的信息
       if (result.status === 'aborted') {
-        sendResponse({ 
+        const response = { 
           success: true, 
           downloadId: 'injected-' + downloadId,
           aborted: true
-        });
+        };
+        console.log('📤 发送中止响应给background:', response);
+        sendResponse(response);
       } else {
-        sendResponse({ 
+        const response = { 
           success: true, 
           downloadId: 'injected-' + downloadId
-        });
+        };
+        console.log('📤 发送成功响应给background:', response);
+        sendResponse(response);
       }
     }).catch((error) => {
       console.error('❌ Content script等待下载结果时出错:', error);
-      sendResponse({ 
+      const response = { 
         success: false, 
         error: error.message,
         downloadId: 'injected-' + downloadId
-      });
+      };
+      console.log('📤 发送错误响应给background:', response);
+      sendResponse(response);
     });
     
     return true; // 异步响应

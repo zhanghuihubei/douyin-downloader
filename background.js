@@ -504,12 +504,16 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
           if (downloadInfo.markTimeout) {
             clearTimeout(downloadInfo.markTimeout);
             console.log(`⏰ 已取消下载ID ${downloadId} 的延迟标记`);
+          } else {
+            console.log(`⚠️ 下载ID ${downloadId} 没有markTimeout`);
           }
           
           // 中断下载控制器
           if (downloadInfo.controller) {
             downloadInfo.controller.abort();
             console.log(`✅ 下载ID ${downloadId} 控制器已中断`);
+          } else {
+            console.log(`⚠️ 下载ID ${downloadId} 没有控制器`);
           }
         } catch (error) {
           console.log(`⚠️ 中断下载ID ${downloadId} 时出错:`, error.message);
@@ -756,6 +760,46 @@ async function downloadVideo(videoData) {
     
     // 发送下载请求到content script（包含中断信号和控制器引用）
     // 直接传递AbortController的aborted状态
+    console.log('🔍 发送下载请求到content script，downloadId:', downloadId);
+    
+    // 立即创建延迟标记的timeout，这样stopDownload可以随时取消它
+    const markDownloadTimeout = setTimeout(async () => {
+      console.log('⏰ 延迟标记回调触发，downloadId:', downloadId);
+      console.log('⏰ stoppedDownloadIds包含:', Array.from(stoppedDownloadIds));
+      try {
+        // 检查这个下载是否被用户停止了（防止在延迟期间收到停止指令）
+        if (stoppedDownloadIds.has(downloadId)) {
+          console.log('🛑 检测到下载被用户停止，取消延迟标记:', videoData.title);
+          // 从停止列表中移除并清理
+          stoppedDownloadIds.delete(downloadId);
+          inFlightDownloads.delete(downloadId);
+          return;
+        }
+
+        const filename_final = `${sanitizeFilename(videoData.author)}_${sanitizeFilename(videoData.title)}_${videoData.awemeId}.mp4`;
+        await DouyinDB.markVideoAsDownloaded(videoData.awemeId, filename_final);
+        console.log('✅ 延迟标记视频为已下载:', videoData.title);
+        // 标记完成后从inFlightDownloads中删除
+        inFlightDownloads.delete(downloadId);
+        // 通知popup更新状态
+        chrome.runtime.sendMessage({
+          action: 'downloadProgress',
+          downloaded: videoData.title,
+          remaining: downloadQueue.length
+        }).catch(() => {});
+      } catch (error) {
+        console.error('❌ 延迟标记下载失败:', error);
+        // 错误时也清理
+        inFlightDownloads.delete(downloadId);
+      }
+    }, 5000); // 延迟5秒
+    
+    // 立即存储timeout ID，这样stopDownload可以找到它
+    const downloadInfo = inFlightDownloads.get(downloadId);
+    if (downloadInfo) {
+      downloadInfo.markTimeout = markDownloadTimeout;
+    }
+    
     const response = await chrome.tabs.sendMessage(tab.id, {
       action: 'downloadVideoInPage',
       videoUrl: videoUrl,
@@ -764,13 +808,18 @@ async function downloadVideo(videoData) {
       downloadId: downloadId // 用于标识这次下载请求
     });
     
+    console.log('🔍 收到content script响应:', response);
+    
     if (response && response.success) {
       console.log('✅ Content script下载请求已发送');
+      console.log('🔍 检查响应是否包含中止状态:', response);
       
       // 检查下载是否被中止
       if (response.aborted) {
         console.log('🛑 检测到下载被中止，添加到停止列表:', videoData.title);
+        console.log('🛑 添加downloadId到stoppedDownloadIds:', downloadId);
         stoppedDownloadIds.add(downloadId);
+        console.log('🛑 stoppedDownloadIds现在包含:', Array.from(stoppedDownloadIds));
         inFlightDownloads.delete(downloadId);
         
         // 下载被中止，抛出错误让下载队列继续处理下一个
@@ -779,44 +828,9 @@ async function downloadVideo(videoData) {
         throw abortError;
       }
       
-      // 注意：这里不立即标记为已下载，因为content script返回success只表示下载请求已发送
-      // 我们需要等待文件真正保存完成后再标记，但由于blob下载的限制，我们采用延迟标记的策略
-      // 延迟5秒后标记为已下载，给浏览器足够时间保存文件
-      const markDownloadTimeout = setTimeout(async () => {
-        try {
-          // 检查这个下载是否被用户停止了（防止在延迟期间收到停止指令）
-          if (stoppedDownloadIds.has(downloadId)) {
-            console.log('🛑 检测到下载被用户停止，取消延迟标记:', videoData.title);
-            // 从停止列表中移除并清理
-            stoppedDownloadIds.delete(downloadId);
-            inFlightDownloads.delete(downloadId);
-            return;
-          }
-
-          const filename_final = `${sanitizeFilename(videoData.author)}_${sanitizeFilename(videoData.title)}_${videoData.awemeId}.mp4`;
-          await DouyinDB.markVideoAsDownloaded(videoData.awemeId, filename_final);
-          console.log('✅ 延迟标记视频为已下载:', videoData.title);
-          // 标记完成后从inFlightDownloads中删除
-          inFlightDownloads.delete(downloadId);
-          // 通知popup更新状态
-          chrome.runtime.sendMessage({
-            action: 'downloadProgress',
-            downloaded: videoData.title,
-            remaining: downloadQueue.length
-          }).catch(() => {});
-        } catch (error) {
-          console.error('❌ 延迟标记下载失败:', error);
-          // 错误时也清理
-          inFlightDownloads.delete(downloadId);
-        }
-      }, 5000); // 延迟5秒
-
-      // 存储timeout ID，以便在停止下载时能够取消
-      const downloadInfo = inFlightDownloads.get(downloadId);
-      if (downloadInfo) {
-        downloadInfo.markTimeout = markDownloadTimeout;
-      }
-
+      // 注意：延迟标记的timeout已经在发送消息之前创建了
+      // 这里不需要再创建，避免重复执行
+      
       // 不在这里删除！保持downloadId在inFlightDownloads中，直到延迟标记完成
       // 这样当用户在下载进行中停止时，能够找到这个downloadId
       return 'content-script-' + downloadId; // 返回虚拟downloadId
