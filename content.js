@@ -107,8 +107,9 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         
         // 检查是否是这个下载的完成事件
         if (event.data.action === 'downloadComplete' && event.data.downloadId === downloadId) {
-          window.removeEventListener('message', handleDownloadResult);
           console.log('📤 收到下载完成信号:', event.data.downloadId, '状态:', event.data.status);
+          window.removeEventListener('message', handleDownloadResult);
+          clearTimeout(timeoutId); // 清除超时器
           resolveDownload(event.data);
         }
       };
@@ -116,7 +117,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       window.addEventListener('message', handleDownloadResult);
       
       // 设置超时（30秒），以防消息丢失
-      setTimeout(() => {
+      const timeoutId = setTimeout(() => {
         window.removeEventListener('message', handleDownloadResult);
         console.warn('⏱️ 下载消息等待超时，使用默认成功响应');
         resolveDownload({ status: 'timeout', downloadId: downloadId });
