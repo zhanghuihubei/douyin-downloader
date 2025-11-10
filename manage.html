@@ -440,6 +440,53 @@
     </div>
   </div>
   
+  <!-- 验证码模态框 -->
+  <div id="verificationModal" class="modal" style="background: rgba(0,0,0,0.7);">
+    <div class="modal-content" style="max-width: 500px; text-align: center;">
+      <div class="modal-header" style="color: #dc3545; margin-bottom: 30px;">
+        🚨 危险操作确认 🚨
+      </div>
+      
+      <div style="background: #fff3cd; border-left: 4px solid #ffc107; padding: 15px; border-radius: 6px; margin-bottom: 30px; text-align: left;">
+        <div style="font-weight: bold; color: #856404; margin-bottom: 10px;">⚠️ 您即将执行以下操作：</div>
+        <ul style="color: #856404; margin-left: 20px; line-height: 1.8;">
+          <li>删除所有已下载的视频记录</li>
+          <li>删除所有关注用户</li>
+          <li>清空所有下载历史</li>
+        </ul>
+        <div style="margin-top: 10px; font-weight: bold; color: #dc3545;">此操作不可恢复！</div>
+      </div>
+      
+      <div style="margin-bottom: 30px;">
+        <div style="font-size: 14px; color: #666; margin-bottom: 15px;">为了防止误操作，请输入以下 4 位验证码：</div>
+        <div style="font-size: 48px; font-weight: bold; letter-spacing: 10px; color: #667eea; font-family: 'Courier New', monospace; margin-bottom: 30px; padding: 20px; background: #f8f9fa; border-radius: 8px; border: 2px dashed #667eea;">
+          <span id="verificationCode">0000</span>
+        </div>
+        
+        <div style="margin-bottom: 15px;">
+          <input 
+            type="text" 
+            id="verificationInput" 
+            placeholder="请输入验证码" 
+            maxlength="4" 
+            style="width: 100%; padding: 15px; font-size: 24px; text-align: center; letter-spacing: 10px; border: 2px solid #ddd; border-radius: 8px; font-family: 'Courier New', monospace; font-weight: bold;"
+          >
+        </div>
+        
+        <div style="font-size: 12px; color: #999;">输入框会自动聚焦。请确保输入的数字与上方显示的验证码完全一致。</div>
+      </div>
+      
+      <div style="display: flex; gap: 10px; justify-content: center;">
+        <button class="btn btn-secondary" id="verificationCancelBtn" style="flex: 1; max-width: 150px;">
+          ❌ 取消
+        </button>
+        <button class="btn btn-danger" id="verificationConfirmBtn" style="flex: 1; max-width: 150px;">
+          ✅ 确认删除
+        </button>
+      </div>
+    </div>
+  </div>
+  
   <script src="manage.js"></script>
 </body>
 </html>

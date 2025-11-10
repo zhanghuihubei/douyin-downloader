@@ -722,39 +722,97 @@ async function handleDeleteAll() {
   // 生成随机4位数验证码
   const verificationCode = Math.floor(1000 + Math.random() * 9000).toString();
   
-  // 显示确认对话框
-  const userInput = prompt(
-    `⚠️ 危险操作确认 ⚠️\n\n` +
-    `您即将删除所有视频记录和用户数据！\n\n` +
-    `为了防止误操作，请输入以下4位数字进行确认：\n\n` +
-    `🔢 验证码: ${verificationCode}\n\n` +
-    `此操作将：\n` +
-    `• 删除所有已下载的视频记录\n` +
-    `• 删除所有关注用户\n` +
-    `• 清空所有下载历史\n` +
-    `• 此操作不可恢复！\n\n` +
-    `请输入验证码:`
-  );
+  // 显示验证码模态框
+  showVerificationModal(verificationCode);
+}
+
+// 显示验证码模态框
+function showVerificationModal(verificationCode) {
+  const modal = document.getElementById('verificationModal');
+  const codeDisplay = document.getElementById('verificationCode');
+  const input = document.getElementById('verificationInput');
+  const confirmBtn = document.getElementById('verificationConfirmBtn');
+  const cancelBtn = document.getElementById('verificationCancelBtn');
   
-  // 检查用户输入
-  if (userInput === null) {
-    console.log('❌ 用户取消删除操作');
-    return;
-  }
+  // 显示验证码
+  codeDisplay.textContent = verificationCode;
   
-  if (userInput.trim() !== verificationCode) {
-    console.log('❌ 验证码错误，用户输入:', userInput, '期望:', verificationCode);
-    alert('❌ 验证码错误！操作已取消。\n\n请确保输入的4位数字与显示的验证码完全一致。');
-    return;
-  }
+  // 清空输入框
+  input.value = '';
   
-  // 二次确认
-  if (!confirm('🚨 最终确认 🚨\n\n您确定要删除所有数据吗？\n\n这将清空：\n• 所有视频记录\n• 所有用户数据\n• 所有下载历史\n\n此操作不可恢复！')) {
-    console.log('❌ 用户在最终确认时取消操作');
-    return;
-  }
+  // 显示模态框
+  modal.classList.add('active');
   
-  console.log('✅ 验证通过，开始删除全部记录...');
+  // 自动聚焦输入框
+  setTimeout(() => {
+    input.focus();
+  }, 100);
+  
+  // 定义取消处理
+  const handleCancel = () => {
+    console.log('❌ 用户取消验证');
+    cleanup();
+  };
+  
+  // 定义确认处理
+  const handleConfirm = async () => {
+    const userInput = input.value.trim();
+    
+    // 检查输入是否为空
+    if (!userInput) {
+      alert('❌ 请输入验证码');
+      input.focus();
+      return;
+    }
+    
+    // 检查验证码是否正确
+    if (userInput !== verificationCode) {
+      console.log('❌ 验证码错误，用户输入:', userInput, '期望:', verificationCode);
+      alert('❌ 验证码错误！\n\n请确保输入的4位数字与上方显示的验证码完全一致。');
+      input.value = '';
+      input.focus();
+      return;
+    }
+    
+    console.log('✅ 验证码验证通过');
+    
+    // 二次确认
+    if (!confirm('🚨 最终确认 🚨\n\n您确定要删除所有数据吗？\n\n这将清空：\n• 所有视频记录\n• 所有用户数据\n• 所有下载历史\n\n此操作不可恢复！')) {
+      console.log('❌ 用户在最终确认时取消操作');
+      cleanup();
+      return;
+    }
+    
+    console.log('✅ 最终确认通过，开始删除全部记录...');
+    cleanup();
+    await performDeleteAll();
+  };
+  
+  // 定义清理处理
+  const cleanup = () => {
+    cancelBtn.removeEventListener('click', handleCancel);
+    confirmBtn.removeEventListener('click', handleConfirm);
+    input.removeEventListener('keypress', handleKeypress);
+    modal.classList.remove('active');
+  };
+  
+  // 处理回车键
+  const handleKeypress = (e) => {
+    if (e.key === 'Enter') {
+      handleConfirm();
+    } else if (e.key === 'Escape') {
+      handleCancel();
+    }
+  };
+  
+  // 绑定事件
+  cancelBtn.addEventListener('click', handleCancel);
+  confirmBtn.addEventListener('click', handleConfirm);
+  input.addEventListener('keypress', handleKeypress);
+}
+
+// 执行删除全部记录
+async function performDeleteAll() {
   
   try {
     // 显示删除进度
