@@ -96,19 +96,70 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     console.log('🚦 中断信号状态:', request.abortSignal || 'none');
     console.log('🆔 下载ID:', request.downloadId || 'none');
     
-    // 转发给injected script下载（它在真正的页面上下文，没有CORS限制）
-    window.postMessage({
-      type: 'TO_DOUYIN_PAGE',
-      action: 'downloadVideo',
-      videoUrl: request.videoUrl,
-      filename: request.filename,
-      abortSignal: request.abortSignal || 'inactive',
-      downloadId: request.downloadId || Date.now()
-    }, '*');
+    const downloadId = request.downloadId || Date.now();
     
-    // 立即返回成功（实际下载由injected script处理）
-    sendResponse({ success: true, downloadId: 'injected-' + (request.downloadId || Date.now()) });
-    return true;
+    // 等待injected script的下载完成或中止
+    const downloadPromise = new Promise((resolveDownload) => {
+      // 设置一个一次性的消息监听器来接收下载结果
+      const handleDownloadResult = (event) => {
+        if (event.source !== window) return;
+        if (!event.data.type || event.data.type !== 'FROM_DOUYIN_PAGE') return;
+        
+        // 检查是否是这个下载的完成事件
+        if (event.data.action === 'downloadComplete' && event.data.downloadId === downloadId) {
+          window.removeEventListener('message', handleDownloadResult);
+          console.log('📤 收到下载完成信号:', event.data.downloadId, '状态:', event.data.status);
+          resolveDownload(event.data);
+        }
+      };
+      
+      window.addEventListener('message', handleDownloadResult);
+      
+      // 设置超时（30秒），以防消息丢失
+      setTimeout(() => {
+        window.removeEventListener('message', handleDownloadResult);
+        console.warn('⏱️ 下载消息等待超时，使用默认成功响应');
+        resolveDownload({ status: 'timeout', downloadId: downloadId });
+      }, 30000);
+      
+      // 转发给injected script下载（它在真正的页面上下文，没有CORS限制）
+      window.postMessage({
+        type: 'TO_DOUYIN_PAGE',
+        action: 'downloadVideo',
+        videoUrl: request.videoUrl,
+        filename: request.filename,
+        abortSignal: request.abortSignal || 'inactive',
+        downloadId: downloadId
+      }, '*');
+    });
+    
+    // 异步处理下载结果并返回
+    downloadPromise.then((result) => {
+      console.log('📤 Content script返回下载结果:', result);
+      
+      // 如果是中止状态，返回不同的信息
+      if (result.status === 'aborted') {
+        sendResponse({ 
+          success: true, 
+          downloadId: 'injected-' + downloadId,
+          aborted: true
+        });
+      } else {
+        sendResponse({ 
+          success: true, 
+          downloadId: 'injected-' + downloadId
+        });
+      }
+    }).catch((error) => {
+      console.error('❌ Content script等待下载结果时出错:', error);
+      sendResponse({ 
+        success: false, 
+        error: error.message,
+        downloadId: 'injected-' + downloadId
+      });
+    });
+    
+    return true; // 异步响应
   }
   
   if (request.action === 'abortDownload') {
