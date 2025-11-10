@@ -714,3 +714,106 @@ function updateUserVideoCounts() {
     }
   });
 }
+
+// 删除全部记录处理函数
+async function handleDeleteAll() {
+  console.log('🗑️ 请求删除全部记录...');
+  
+  // 生成随机4位数验证码
+  const verificationCode = Math.floor(1000 + Math.random() * 9000).toString();
+  
+  // 显示确认对话框
+  const userInput = prompt(
+    `⚠️ 危险操作确认 ⚠️\n\n` +
+    `您即将删除所有视频记录和用户数据！\n\n` +
+    `为了防止误操作，请输入以下4位数字进行确认：\n\n` +
+    `🔢 验证码: ${verificationCode}\n\n` +
+    `此操作将：\n` +
+    `• 删除所有已下载的视频记录\n` +
+    `• 删除所有关注用户\n` +
+    `• 清空所有下载历史\n` +
+    `• 此操作不可恢复！\n\n` +
+    `请输入验证码:`
+  );
+  
+  // 检查用户输入
+  if (userInput === null) {
+    console.log('❌ 用户取消删除操作');
+    return;
+  }
+  
+  if (userInput.trim() !== verificationCode) {
+    console.log('❌ 验证码错误，用户输入:', userInput, '期望:', verificationCode);
+    alert('❌ 验证码错误！操作已取消。\n\n请确保输入的4位数字与显示的验证码完全一致。');
+    return;
+  }
+  
+  // 二次确认
+  if (!confirm('🚨 最终确认 🚨\n\n您确定要删除所有数据吗？\n\n这将清空：\n• 所有视频记录\n• 所有用户数据\n• 所有下载历史\n\n此操作不可恢复！')) {
+    console.log('❌ 用户在最终确认时取消操作');
+    return;
+  }
+  
+  console.log('✅ 验证通过，开始删除全部记录...');
+  
+  try {
+    // 显示删除进度
+    const videosListContainer = document.getElementById('videosList');
+    const originalContent = videosListContainer.innerHTML;
+    
+    videosListContainer.innerHTML = `
+      <div class="loading">
+        <div style="font-size: 32px; margin-bottom: 20px;">🗑️</div>
+        <div style="font-size: 18px; margin-bottom: 10px;">正在删除全部记录...</div>
+        <div style="font-size: 14px; color: #6c757d;">请稍候，这可能需要一些时间</div>
+      </div>
+    `;
+    
+    // 发送删除请求到后台
+    console.log('📨 发送删除全部记录请求到后台...');
+    const response = await chrome.runtime.sendMessage({ 
+      action: 'deleteAllRecords'
+    });
+    
+    console.log('📩 删除响应:', response);
+    
+    if (response && response.success) {
+      console.log('✅ 全部记录已删除');
+      
+      // 显示成功消息
+      videosListContainer.innerHTML = `
+        <div class="empty-state">
+          <div class="empty-state-icon">✅</div>
+          <div class="empty-state-text">删除完成</div>
+          <div class="empty-state-hint">所有记录已成功清空</div>
+        </div>
+      `;
+      
+      alert('✅ 删除成功！\n\n所有视频记录和用户数据已清空。\n页面将自动刷新。');
+      
+      // 重新加载数据
+      await loadData();
+    } else {
+      console.error('❌ 删除失败:', response?.error);
+      
+      // 恢复原始内容
+      videosListContainer.innerHTML = originalContent;
+      
+      alert('❌ 删除失败: ' + (response?.error || '未知错误'));
+    }
+  } catch (error) {
+    console.error('❌ 删除全部记录失败:', error);
+    
+    // 恢复原始内容
+    const videosListContainer = document.getElementById('videosList');
+    videosListContainer.innerHTML = `
+      <div class="empty-state">
+        <div class="empty-state-icon">❌</div>
+        <div class="empty-state-text">删除失败</div>
+        <div class="empty-state-hint">${error.message}</div>
+      </div>
+    `;
+    
+    alert('❌ 删除失败: ' + error.message);
+  }
+}

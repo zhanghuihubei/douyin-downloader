@@ -562,6 +562,54 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     })();
     return true;
   }
+  
+  if (request.action === 'deleteAllRecords') {
+    console.log('🗑️ 收到删除全部记录请求');
+    
+    (async () => {
+      try {
+        // 停止所有下载
+        console.log('🛑 停止所有下载...');
+        stopAutoDownload();
+        downloadQueue = [];
+        isDownloading = false;
+        stopDownload = true;
+        
+        // 中断所有正在进行的下载
+        const tabs = await chrome.tabs.query({ url: 'https://www.douyin.com/*' });
+        const downloadIds = Array.from(inFlightDownloads.keys());
+        console.log(`🆔 删除时需要中断的下载ID列表: ${downloadIds.join(', ')}`);
+
+        for (const tab of tabs) {
+          try {
+            await chrome.tabs.sendMessage(tab.id, {
+              action: 'abortDownload',
+              timestamp: Date.now(),
+              downloadIds: downloadIds
+            });
+          } catch (error) {
+            console.log(`⚠️ 通知标签页 ${tab.id} 中断下载失败:`, error.message);
+          }
+        }
+
+        // 清理下载状态
+        inFlightDownloads.clear();
+        stoppedDownloadIds.clear();
+        
+        // 删除所有数据库记录
+        console.log('🗑️ 清空数据库...');
+        await DouyinDB.clearAllData();
+        
+        console.log('✅ 所有记录已删除');
+        sendResponse({ success: true });
+      } catch (error) {
+        console.error('❌ 删除全部记录失败:', error);
+        sendResponse({ success: false, error: error.message });
+      }
+    })();
+    
+    return true;
+  }
 });
 
 // 添加视频到下载队列
