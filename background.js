@@ -818,8 +818,18 @@ async function downloadVideo(videoData) {
       if (response.aborted) {
         console.log('🛑 检测到下载被中止，添加到停止列表:', videoData.title);
         console.log('🛑 添加downloadId到stoppedDownloadIds:', downloadId);
+        console.log('🛑 Content script返回的downloadId:', response.downloadId);
+        
         stoppedDownloadIds.add(downloadId);
         console.log('🛑 stoppedDownloadIds现在包含:', Array.from(stoppedDownloadIds));
+        
+        // 取消延迟标记的timeout
+        const downloadInfo = inFlightDownloads.get(downloadId);
+        if (downloadInfo && downloadInfo.markTimeout) {
+          clearTimeout(downloadInfo.markTimeout);
+          console.log('⏰ 已取消下载ID', downloadId, '的延迟标记（因为被中止）');
+        }
+        
         inFlightDownloads.delete(downloadId);
         
         // 下载被中止，抛出错误让下载队列继续处理下一个
