@@ -766,6 +766,19 @@ async function downloadVideo(videoData) {
     
     if (response && response.success) {
       console.log('✅ Content script下载请求已发送');
+      
+      // 检查下载是否被中止
+      if (response.aborted) {
+        console.log('🛑 检测到下载被中止，添加到停止列表:', videoData.title);
+        stoppedDownloadIds.add(downloadId);
+        inFlightDownloads.delete(downloadId);
+        
+        // 下载被中止，抛出错误让下载队列继续处理下一个
+        const abortError = new Error('Download aborted by user');
+        abortError.name = 'AbortError';
+        throw abortError;
+      }
+      
       // 注意：这里不立即标记为已下载，因为content script返回success只表示下载请求已发送
       // 我们需要等待文件真正保存完成后再标记，但由于blob下载的限制，我们采用延迟标记的策略
       // 延迟5秒后标记为已下载，给浏览器足够时间保存文件

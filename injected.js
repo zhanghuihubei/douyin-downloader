@@ -1040,14 +1040,41 @@
       
       console.log('✅ 下载触发成功');
       
+      // 发送下载完成信号给content script
+      window.postMessage({
+        type: 'FROM_DOUYIN_PAGE',
+        action: 'downloadComplete',
+        downloadId: downloadId,
+        status: 'success'
+      }, '*');
+      
     } catch (error) {
       if (error.name === 'AbortError' || error.message === 'Download aborted') {
         console.log('🛑 下载被用户中断');
+        
+        // 发送中止信号给content script
+        window.postMessage({
+          type: 'FROM_DOUYIN_PAGE',
+          action: 'downloadComplete',
+          downloadId: downloadId,
+          status: 'aborted'
+        }, '*');
+        
         // 对于中断错误，不重新抛出，只是记录日志
         return;
       } else {
         console.error('❌ 页面上下文下载失败:', error);
         console.error('错误详情:', error.stack);
+        
+        // 发送失败信号给content script
+        window.postMessage({
+          type: 'FROM_DOUYIN_PAGE',
+          action: 'downloadComplete',
+          downloadId: downloadId,
+          status: 'error',
+          error: error.message
+        }, '*');
+        
         throw error;
       }
     } finally {
