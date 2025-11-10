@@ -13,6 +13,7 @@ let stopDownload = false; // 停止下载标志
 let currentDownloadController = null; // 当前下载的控制器
 let downloadIdToVideo = new Map(); // downloadId -> video 映射
 let inFlightDownloads = new Map(); // 跟踪正在进行的下载 downloadId -> {controller, startTime}
+let stoppedDownloadIds = new Set(); // 存储被用户停止的下载ID
 let config = {
   autoDownload: true,
   checkInterval: 3600000, // 1小时检查一次
@@ -257,6 +258,10 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 
           console.log(`🛑 暂停时中断所有 ${inFlightDownloads.size} 个正在进行的下载...`);
           for (const [downloadId, downloadInfo] of inFlightDownloads.entries()) {
+            // 记录被停止的下载ID
+            stoppedDownloadIds.add(downloadId);
+            console.log(`📝 暂停时记录被停止的下载ID: ${downloadId}`);
+            
             try {
               // 取消延迟标记的timeout
               if (downloadInfo.markTimeout) {
@@ -487,9 +492,13 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       await Promise.allSettled(abortPromises);
       console.log('📢 所有标签页中断消息发送完成');
 
-      // 中断所有正在进行的下载控制器和取消延迟标记
+      // 记录所有被停止的下载ID，并中断所有正在进行的下载控制器和取消延迟标记
       console.log(`🛑 中断所有 ${inFlightDownloads.size} 个正在进行的下载...`);
       for (const [downloadId, downloadInfo] of inFlightDownloads.entries()) {
+        // 记录被停止的下载ID
+        stoppedDownloadIds.add(downloadId);
+        console.log(`📝 记录被停止的下载ID: ${downloadId}`);
+        
         try {
           // 取消延迟标记的timeout
           if (downloadInfo.markTimeout) {
@@ -762,10 +771,11 @@ async function downloadVideo(videoData) {
       // 延迟5秒后标记为已下载，给浏览器足够时间保存文件
       const markDownloadTimeout = setTimeout(async () => {
         try {
-          // 再次检查是否已被中断（防止在延迟期间收到停止指令）
-          if (stopDownload) {
-            console.log('🛑 检测到停止标志，取消延迟标记:', videoData.title);
-            // 延迟标记被取消，从inFlightDownloads中删除
+          // 检查这个下载是否被用户停止了（防止在延迟期间收到停止指令）
+          if (stoppedDownloadIds.has(downloadId)) {
+            console.log('🛑 检测到下载被用户停止，取消延迟标记:', videoData.title);
+            // 从停止列表中移除并清理
+            stoppedDownloadIds.delete(downloadId);
             inFlightDownloads.delete(downloadId);
             return;
           }
@@ -806,6 +816,9 @@ async function downloadVideo(videoData) {
       const downloadInfo = inFlightDownloads.get(downloadId);
       
       inFlightDownloads.delete(downloadId);
+      
+      // 从停止列表中移除（如果存在）
+      stoppedDownloadIds.delete(downloadId);
       
       // 取消延迟标记的timeout
       if (downloadInfo && downloadInfo.markTimeout) {
