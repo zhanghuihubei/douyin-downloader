@@ -588,6 +588,99 @@ async function deleteVideo(awemeId) {
 }
 
 /**
+ * 清空所有数据库记录
+ */
+async function clearAllData() {
+  const database = await getDB();
+  return new Promise((resolve, reject) => {
+    const transaction = database.transaction(['users', 'videos', 'config'], 'readwrite');
+    
+    let completed = 0;
+    const totalStores = 3;
+    let hasError = false;
+    
+    const checkComplete = () => {
+      completed++;
+      if (completed === totalStores) {
+        if (hasError) {
+          reject(new Error('部分数据清除失败'));
+        } else {
+          console.log('✅ 所有数据库记录已清空');
+          resolve(true);
+        }
+      }
+    };
+    
+    // 清空用户表
+    const usersStore = transaction.objectStore('users');
+    const usersRequest = usersStore.clear();
+    usersRequest.onsuccess = () => {
+      console.log('✅ 用户表已清空');
+      checkComplete();
+    };
+    usersRequest.onerror = (event) => {
+      console.error('❌ 清空用户表失败:', event.target.error);
+      hasError = true;
+      checkComplete();
+    };
+    
+    // 清空视频表
+    const videosStore = transaction.objectStore('videos');
+    const videosRequest = videosStore.clear();
+    videosRequest.onsuccess = () => {
+      console.log('✅ 视频表已清空');
+      checkComplete();
+    };
+    videosRequest.onerror = (event) => {
+      console.error('❌ 清空视频表失败:', event.target.error);
+      hasError = true;
+      checkComplete();
+    };
+    
+    // 清空配置表（保留基本配置）
+    const configStore = transaction.objectStore('config');
+    const configRequest = configStore.clear();
+    configRequest.onsuccess = () => {
+      console.log('✅ 配置表已清空');
+      // 重新保存基本配置
+      const saveTransaction = database.transaction(['config'], 'readwrite');
+      const saveStore = saveTransaction.objectStore('config');
+      
+      const defaultConfigs = [
+        { key: 'autoDownload', value: true },
+        { key: 'checkInterval', value: 3600000 },
+        { key: 'lastCheckTime', value: null },
+        { key: 'minDelay', value: 20000 },
+        { key: 'maxDelay', value: 30000 },
+        { key: 'migrated', value: true }
+      ];
+      
+      let saved = 0;
+      defaultConfigs.forEach(config => {
+        const saveRequest = saveStore.put(config);
+        saveRequest.onsuccess = () => {
+          saved++;
+          if (saved === defaultConfigs.length) {
+            console.log('✅ 默认配置已恢复');
+            checkComplete();
+          }
+        };
+        saveRequest.onerror = (event) => {
+          console.error('❌ 保存默认配置失败:', event.target.error);
+          hasError = true;
+          checkComplete();
+        };
+      });
+    };
+    configRequest.onerror = (event) => {
+      console.error('❌ 清空配置表失败:', event.target.error);
+      hasError = true;
+      checkComplete();
+    };
+  });
+}
+
+/**
  * 获取统计信息
  */
 async function getStats() {
@@ -846,6 +939,7 @@ const DouyinDB = {
   markVideoAsDownloaded,
   deleteVideo,
   deleteVideosByUser,
+  clearAllData,
   
   // 统计
   getStats,

@@ -1,0 +1,187 @@
+[1mdiff --git a/background.js b/background.js[m
+[1mindex 68de1c8..50dad03 100644[m
+[1m--- a/background.js[m
+[1m+++ b/background.js[m
+[36m@@ -562,6 +562,54 @@[m [mchrome.runtime.onMessage.addListener((request, sender, sendResponse) => {[m
+     })();[m
+     return true;[m
+   }[m
+[32m+[m[41m  [m
+[32m+[m[32m  if (request.action === 'deleteAllRecords') {[m
+[32m+[m[32m    console.log('🗑️ 收到删除全部记录请求');[m
+[32m+[m[41m    [m
+[32m+[m[32m    (async () => {[m
+[32m+[m[32m      try {[m
+[32m+[m[32m        // 停止所有下载[m
+[32m+[m[32m        console.log('🛑 停止所有下载...');[m
+[32m+[m[32m        stopAutoDownload();[m
+[32m+[m[32m        downloadQueue = [];[m
+[32m+[m[32m        isDownloading = false;[m
+[32m+[m[32m        stopDownload = true;[m
+[32m+[m[41m        [m
+[32m+[m[32m        // 中断所有正在进行的下载[m
+[32m+[m[32m        const tabs = await chrome.tabs.query({ url: 'https://www.douyin.com/*' });[m
+[32m+[m[32m        const downloadIds = Array.from(inFlightDownloads.keys());[m
+[32m+[m[32m        console.log(`🆔 删除时需要中断的下载ID列表: ${downloadIds.join(', ')}`);[m
+[32m+[m
+[32m+[m[32m        for (const tab of tabs) {[m
+[32m+[m[32m          try {[m
+[32m+[m[32m            await chrome.tabs.sendMessage(tab.id, {[m
+[32m+[m[32m              action: 'abortDownload',[m
+[32m+[m[32m              timestamp: Date.now(),[m
+[32m+[m[32m              downloadIds: downloadIds[m
+[32m+[m[32m            });[m
+[32m+[m[32m          } catch (error) {[m
+[32m+[m[32m            console.log(`⚠️ 通知标签页 ${tab.id} 中断下载失败:`, error.message);[m
+[32m+[m[32m          }[m
+[32m+[m[32m        }[m
+[32m+[m
+[32m+[m[32m        // 清理下载状态[m
+[32m+[m[32m        inFlightDownloads.clear();[m
+[32m+[m[32m        stoppedDownloadIds.clear();[m
+[32m+[m[41m        [m
+[32m+[m[32m        // 删除所有数据库记录[m
+[32m+[m[32m        console.log('🗑️ 清空数据库...');[m
+[32m+[m[32m        await DouyinDB.clearAllData();[m
+[32m+[m[41m        [m
+[32m+[m[32m        console.log('✅ 所有记录已删除');[m
+[32m+[m[32m        sendResponse({ success: true });[m
+[32m+[m[32m      } catch (error) {[m
+[32m+[m[32m        console.error('❌ 删除全部记录失败:', error);[m
+[32m+[m[32m        sendResponse({ success: false, error: error.message });[m
+[32m+[m[32m      }[m
+[32m+[m[32m    })();[m
+[32m+[m[41m    [m
+[32m+[m[32m    return true;[m
+[32m+[m[32m  }[m
+ });[m
+ [m
+ // 添加视频到下载队列[m
+[1mdiff --git a/db.js b/db.js[m
+[1mindex 20aa300..6441221 100644[m
+[1m--- a/db.js[m
+[1m+++ b/db.js[m
+[36m@@ -587,6 +587,99 @@[m [masync function deleteVideo(awemeId) {[m
+   });[m
+ }[m
+ [m
+[32m+[m[32m/**[m
+[32m+[m[32m * 清空所有数据库记录[m
+[32m+[m[32m */[m
+[32m+[m[32masync function clearAllData() {[m
+[32m+[m[32m  const database = await getDB();[m
+[32m+[m[32m  return new Promise((resolve, reject) => {[m
+[32m+[m[32m    const transaction = database.transaction(['users', 'videos', 'config'], 'readwrite');[m
+[32m+[m[41m    [m
+[32m+[m[32m    let completed = 0;[m
+[32m+[m[32m    const totalStores = 3;[m
+[32m+[m[32m    let hasError = false;[m
+[32m+[m[41m    [m
+[32m+[m[32m    const checkComplete = () => {[m
+[32m+[m[32m      completed++;[m
+[32m+[m[32m      if (completed === totalStores) {[m
+[32m+[m[32m        if (hasError) {[m
+[32m+[m[32m          reject(new Error('部分数据清除失败'));[m
+[32m+[m[32m        } else {[m
+[32m+[m[32m          console.log('✅ 所有数据库记录已清空');[m
+[32m+[m[32m          resolve(true);[m
+[32m+[m[32m        }[m
+[32m+[m[32m      }[m
+[32m+[m[32m    };[m
+[32m+[m[41m    [m
+[32m+[m[32m    // 清空用户表[m
+[32m+[m[32m    const usersStore = transaction.objectStore('users');[m
+[32m+[m[32m    const usersRequest = usersStore.clear();[m
+[32m+[m[32m    usersRequest.onsuccess = () => {[m
+[32m+[m[32m      console.log('✅ 用户表已清空');[m
+[32m+[m[32m      checkComplete();[m
+[32m+[m[32m    };[m
+[32m+[m[32m    usersRequest.onerror = (event) => {[m
+[32m+[m[32m      console.error('❌ 清空用户表失败:', event.target.error);[m
+[32m+[m[32m      hasError = true;[m
+[32m+[m[32m      checkComplete();[m
+[32m+[m[32m    };[m
+[32m+[m[41m    [m
+[32m+[m[32m    // 清空视频表[m
+[32m+[m[32m    const videosStore = transaction.objectStore('videos');[m
+[32m+[m[32m    const videosRequest = videosStore.clear();[m
+[32m+[m[32m    videosRequest.onsuccess = () => {[m
+[32m+[m[32m      console.log('✅ 视频表已清空');[m
+[32m+[m[32m      checkComplete();[m
+[32m+[m[32m    };[m
+[32m+[m[32m    videosRequest.onerror = (event) => {[m
+[32m+[m[32m      console.error('❌ 清空视频表失败:', event.target.error);[m
+[32m+[m[32m      hasError = true;[m
+[32m+[m[32m      checkComplete();[m
+[32m+[m[32m    };[m
+[32m+[m[41m    [m
+[32m+[m[32m    // 清空配置表（保留基本配置）[m
+[32m+[m[32m    const configStore = transaction.objectStore('config');[m
+[32m+[m[32m    const configRequest = configStore.clear();[m
+[32m+[m[32m    configRequest.onsuccess = () => {[m
+[32m+[m[32m      console.log('✅ 配置表已清空');[m
+[32m+[m[32m      // 重新保存基本配置[m
+[32m+[m[32m      const saveTransaction = database.transaction(['config'], 'readwrite');[m
+[32m+[m[32m      const saveStore = saveTransaction.objectStore('config');[m
+[32m+[m[41m      [m
+[32m+[m[32m      const defaultConfigs = [[m
+[32m+[m[32m        { key: 'autoDownload', value: true },[m
+[32m+[m[32m        { key: 'checkInterval', value: 3600000 },[m
+[32m+[m[32m        { key: 'lastCheckTime', value: null },[m
+[32m+[m[32m        { key: 'minDelay', value: 20000 },[m
+[32m+[m[32m        { key: 'maxDelay', value: 30000 },[m
+[32m+[m[32m        { key: 'migrated', value: true }[m
+[32m+[m[32m      ];[m
+[32m+[m[41m      [m
+[32m+[m[32m      let saved = 0;[m
+[32m+[m[32m      defaultConfigs.forEach(config => {[m
+[32m+[m[32m        const saveRequest = saveStore.put(config);[m
+[32m+[m[32m        saveRequest.onsuccess = () => {[m
+[32m+[m[32m          saved++;[m
+[32m+[m[32m          if (saved === defaultConfigs.length) {[m
+[32m+[m[32m            console.log('✅ 默认配置已恢复');[m
+[32m+[m[32m            checkComplete();[m
+[32m+[m[32m          }[m
+[32m+[m[32m        };[m
+[32m+[m[32m        saveRequest.onerror = (event) => {[m
+[32m+[m[32m          console.error('❌ 保存默认配置失败:', event.target.error);[m
+[32m+[m[32m          hasError = true;[m
+[32m+[m[32m          checkComplete();[m
+[32m+[m[32m        };[m
+[32m+[m[32m      });[m
+[32m+[m[32m    };[m
+[32m+[m[32m    configRequest.onerror = (event) => {[m
+[32m+[m[32m      console.error('❌ 清空配置表失败:', event.target.error);[m
+[32m+[m[32m      hasError = true;[m
+[32m+[m[32m      checkComplete();[m
+[32m+[m[32m    };[m
+[32m+[m[32m  });[m
+[32m+[m[32m}[m
+[32m+[m
+ /**[m
+  * 获取统计信息[m
+  */[m
+[36m@@ -846,6 +939,7 @@[m [mconst DouyinDB = {[m
+   markVideoAsDownloaded,[m
+   deleteVideo,[m
+   deleteVideosByUser,[m
+[32m+[m[32m  clearAllData,[m
+   [m
+   // 统计[m
+   getStats,[m
+[1mdiff --git a/manage.js b/manage.js[m
+[1mindex 364057c..66ce491 100644[m
+[1m--- a/manage.js[m
+[1m+++ b/manage.js[m
+[36m@@ -714,3 +714,106 @@[m [mfunction updateUserVideoCounts() {[m
+     }[m
+   });[m
+ }[m
+[32m+[m
+[32m+[m[32m// 删除全部记录处理函数[m
+[32m+[m[32masync function handleDeleteAll() {[m
+[32m+[m[32m  console.log('🗑️ 请求删除全部记录...');[m
+[32m+[m[41m  [m
+[32m+[m[32m  // 生成随机4位数验证码[m
+[32m+[m[32m  const verificationCode = Math.floor(1000 + Math.random() * 9000).toString();[m
+[32m+[m[41m  [m
